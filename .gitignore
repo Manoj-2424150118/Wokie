@@ -1,0 +1,31 @@
+# Gradle and build artifacts
+.gradle/
+build/
+app/build/
+local.properties
+
+# IDE & Editor files
+.idea/
+*.iml
+.vscode/
+
+# Build caches & archives
+jdk17.zip
+*.apk
+*.aab
+
+# Logs and local debug dumps
+*.log
+crash_dump.txt
+deps.txt
+logcat*.txt
+cur_ui.xml
+current_screen.xml
+main_screen.xml
+settings_ui.xml
+test_main.xml
+test_settings.xml
+ui_*.xml
+window*.xml
+screen_*.png
+screenshot_*.png
