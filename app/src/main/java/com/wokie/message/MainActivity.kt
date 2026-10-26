@@ -52,6 +52,9 @@ import com.wokie.message.transport.PeerNode
 import com.wokie.message.transport.HotspotCapabilityStatus
 import com.wokie.message.ui.AppLockScreen
 import com.wokie.message.ui.SettingsScreen
+import com.wokie.message.ui.theme.LocalWokieColors
+import com.wokie.message.ui.theme.WokieSpacing
+import com.wokie.message.ui.theme.WokieTheme
 import java.util.UUID
 import androidx.fragment.app.FragmentActivity
 
@@ -130,19 +133,6 @@ class MainActivity : FragmentActivity() {
             }
         }
     }
-}
-
-@Composable
-fun WokieTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = darkColorScheme(
-            background = Color(0xFF050505),
-            surface = Color(0xFF111113),
-            primary = Color(0xFF00F3FF),
-            error = Color(0xFFFF3366)
-        ),
-        content = content
-    )
 }
 
 @Composable

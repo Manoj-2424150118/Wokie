@@ -72,7 +72,10 @@ dependencies {
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
-    
+    // Core Material icons (Send, Lock, Settings, …) for the Material 3 UI;
+    // version is managed by the Compose BOM above.
+    implementation("androidx.compose.material:material-icons-core")
+
     // Google Tink for Military-Grade E2EE Encryption
     implementation("com.google.crypto.tink:tink-android:1.8.0")
     
