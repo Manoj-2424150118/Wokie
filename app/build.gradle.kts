@@ -12,14 +12,33 @@ android {
         applicationId = "com.wokie.message"
         minSdk = 27
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.0.1"
+        versionCode = 3
+        versionName = "1.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    // Release signing comes from CI secrets (KEYSTORE_PATH et al.); local
+    // builds without those env vars stay unsigned instead of failing.
+    signingConfigs {
+        create("release") {
+            val ksPath = System.getenv("KEYSTORE_PATH")
+            if (!ksPath.isNullOrBlank()) {
+                storeFile = file(ksPath)
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = true
+            if (!System.getenv("KEYSTORE_PATH").isNullOrBlank()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+            // R8 stays off until it can be verified on a real device —
+            // Tink/Nearby rely on reflection that needs tested keep rules.
+            isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
