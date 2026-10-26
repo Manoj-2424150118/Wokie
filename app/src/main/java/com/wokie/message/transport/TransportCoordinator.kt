@@ -55,6 +55,11 @@ class TransportCoordinator(
     private var activeTransport: WokieTransport? = null
     private var isEvaluating = false
 
+    // The peer of the current/last connection attempt. Transport callbacks
+    // carry no peer identity, and the coordinator supports one active
+    // connection at a time, so the peer is tracked here.
+    @Volatile private var currentPeerId: String? = null
+
     init {
         engine.preferredTransport = _preferredTransport.value
 
@@ -77,13 +82,22 @@ class TransportCoordinator(
         transports.forEach { t ->
             t.setReceiver { onMessageReceived(it) }
             t.setConnectionCallback(
-                onConnected = { 
+                onConnected = {
                     engine.recordRouteSuccess(t.getTransportType())
-                    evaluateRoutes() 
+                    // Peer bookkeeping: without this, recordPeerAttempt() left the
+                    // peer in activeConnectingPeers forever and canAttemptPeer()
+                    // blocked every reconnect until the app was restarted.
+                    if (t === activeTransport) {
+                        currentPeerId?.let { engine.recordPeerConnected(it) }
+                    }
+                    evaluateRoutes()
                 },
-                onDisconnected = { 
+                onDisconnected = {
                     engine.recordRouteFailure(t.getTransportType())
-                    evaluateRoutes() 
+                    if (t === activeTransport) {
+                        currentPeerId?.let { engine.recordPeerFailed(it) }
+                    }
+                    evaluateRoutes()
                 }
             )
         }
@@ -245,6 +259,7 @@ class TransportCoordinator(
         val t = transports.find { it.getTransportType() == peer.route }
         if (t != null && enabledTransports.contains(t.getTransportType())) {
             engine.recordPeerAttempt(peer.endpointId)
+            currentPeerId = peer.endpointId
             t.requestConnection(peer.endpointId)
             activeTransport = t
             _activeRoute.value = t.getTransportType()
@@ -254,6 +269,8 @@ class TransportCoordinator(
     fun disconnect() {
         activeTransport?.disconnect()
         activeTransport = null
+        currentPeerId?.let { engine.cancelPeerAttempt(it) }
+        currentPeerId = null
         _activeRoute.value = "NONE"
     }
 

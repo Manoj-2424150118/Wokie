@@ -80,6 +80,11 @@ class SmartConnectEngine(
         peerFailureCount.remove(peerId)
     }
 
+    /** Clears an in-flight attempt without a failure penalty (e.g. user disconnect). */
+    fun cancelPeerAttempt(peerId: String) {
+        activeConnectingPeers.remove(peerId)
+    }
+
     fun recordPeerFailed(peerId: String, transport: String? = null) {
         activeConnectingPeers.remove(peerId)
         val count = (peerFailureCount[peerId] ?: 0) + 1
