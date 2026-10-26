@@ -18,7 +18,21 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,6 +42,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -55,6 +71,9 @@ import com.wokie.message.ui.SettingsScreen
 import com.wokie.message.ui.theme.LocalWokieColors
 import com.wokie.message.ui.theme.WokieSpacing
 import com.wokie.message.ui.theme.WokieTheme
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.UUID
 import androidx.fragment.app.FragmentActivity
 
@@ -67,7 +86,12 @@ enum class SessionState {
     SESSION_RECONNECTING
 }
 
-data class Message(val text: String, val isSent: Boolean)
+data class Message(
+    val text: String,
+    val isSent: Boolean,
+    /** Wall-clock time the message was sent/received; shown in the bubble. */
+    val timestamp: Long = System.currentTimeMillis()
+)
 
 class MainActivity : FragmentActivity() {
     private lateinit var appLockManager: AppLockManager
@@ -135,6 +159,7 @@ class MainActivity : FragmentActivity() {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WokieApp(
     activity: FragmentActivity,
@@ -530,273 +555,720 @@ fun WokieApp(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .safeDrawingPadding()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-    ) {
-        // Top Header
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column {
-                Text("WOKIE", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, fontSize = 24.sp)
-                Text("TRANSPORT: $preferredTransport", color = Color.White, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
-            }
-            IconButton(onClick = { showSettings = true }) {
-                Text("⚙️", fontSize = 20.sp)
+    // ------------------------------------------------------------------
+    // Material 3 UI (design-system overhaul). All session/transport logic
+    // above is unchanged — this section only renders state and calls the
+    // same handlers as before (startConnectionToPeer / endCurrentSession /
+    // coordinator.send with the identical envelope construction).
+    // ------------------------------------------------------------------
+    val snackbarHostState = remember { SnackbarHostState() }
+    var showDisconnectConfirm by remember { mutableStateOf(false) }
+
+    // Snackbar feedback for the key session transitions.
+    LaunchedEffect(connectionState, sessionState) {
+        val message = when {
+            connectionState == "SECURE_SESSION" ->
+                "Secure session established — messages are end-to-end encrypted"
+            connectionState == "INVALID_SESSION" ->
+                "Session became invalid. Encryption keys were reset."
+            sessionState == SessionState.TRANSPORT_LOST ->
+                "Connection to the peer was lost"
+            sessionState == SessionState.SESSION_EXPIRED && connectionState == "IDLE" ->
+                "Session expired — reconnect to keep chatting"
+            else -> null
+        }
+        if (message != null) {
+            snackbarHostState.showSnackbar(message)
+        }
+    }
+
+    // Keep the newest message in view as the conversation grows.
+    LaunchedEffect(messages.size) {
+        if (messages.isNotEmpty()) {
+            listState.animateScrollToItem(messages.size)
+        }
+    }
+
+    fun sendCurrentMessage() {
+        if (inputText.isBlank() || !encryptionManager.isReady) return
+        val text = inputText
+        inputText = ""
+
+        val envId = UUID.randomUUID().toString()
+        val currentSeq = ++sendSequenceNumber
+        val aad = (sessionId + envId + currentSeq).toByteArray(Charsets.UTF_8)
+        val encrypted = encryptionManager.encrypt(text.toByteArray(Charsets.UTF_8), aad)
+        if (encrypted != null) {
+            val env = MessageEnvelope(
+                messageId = envId,
+                sequenceNumber = currentSeq,
+                messageType = "ENCRYPTED_MESSAGE",
+                sessionId = sessionId,
+                senderNodeId = localNodeId,
+                ciphertext = encrypted
+            )
+            val serialized = env.toJson().toByteArray(Charsets.UTF_8)
+            val wokiePacket = WokiePacket(
+                packetType = WokiePacketType.ENCRYPTED_MESSAGE,
+                senderNodeId = localNodeId,
+                packetId = envId,
+                payload = serialized
+            )
+            coordinator.send(wokiePacket.toByteArray())
+            messages.add(Message(text, isSent = true))
+            scope.launch { listState.animateScrollToItem(messages.size) }
+        }
+    }
+
+    val isPeerListVisible = connectionState == "IDLE" || connectionState == "DISCONNECTED" ||
+        connectionState == "SESSION_EXPIRED" || connectionState == "NONE" ||
+        connectionState == "INVALID_SESSION"
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Column {
+                        Text("Wokie", style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            text = "Offline mesh · ${transportDisplayName(preferredTransport)}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { showSettings = true }) {
+                        Icon(Icons.Filled.Settings, contentDescription = "Settings")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                )
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        bottomBar = {
+            if (connectionState == "SECURE_SESSION") {
+                MessageInputBar(
+                    text = inputText,
+                    onTextChange = { inputText = it },
+                    onSend = { sendCurrentMessage() },
+                    canSend = inputText.isNotBlank()
+                )
             }
         }
-
-        // Concise Network Status Card
-        Card(
-            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF111113)),
-            border = BorderStroke(1.dp, Color(0xFF222225))
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(horizontal = WokieSpacing.ScreenHorizontal)
         ) {
-            Row(
-                modifier = Modifier.padding(12.dp).fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        when {
-                            connectionState == "SECURE_SESSION" -> {
-                                Text("✓ SECURE", color = Color(0xFF00FF66), fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            }
-                            connectionState == "CONNECTING" || connectionState == "KEY_EXCHANGE" -> {
-                                Text("↻ CONNECTING", color = Color.Yellow, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            }
-                            activeRoute != null && activeRoute != "NONE" -> {
-                                Text("● NETWORK READY", color = Color(0xFF00F3FF), fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            }
-                            else -> {
-                                Text("○ SEARCHING", color = Color.Gray, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            }
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(2.dp))
-                    val statusSubtext = when {
-                        connectionState == "SECURE_SESSION" -> connectedPeerName
-                        connectionState == "CONNECTING" || connectionState == "KEY_EXCHANGE" -> "Finding best route & securing…"
-                        activeRoute != null && activeRoute != "NONE" -> "$activeRoute • Preferred ($preferredTransport)"
-                        else -> "$preferredTransport • ${discoveredPeers.count { it.status == "AVAILABLE" }} peers available"
-                    }
-                    Text(statusSubtext, color = Color.LightGray, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-                }
-                if (sessionStarted) {
-                    Text("TTL: ${timeRemaining}s", color = if (timeRemaining < 30) Color.Red else Color.White, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
-                }
-            }
-        }
+            Spacer(modifier = Modifier.height(WokieSpacing.Small))
+            ConnectionStatusBanner(
+                connectionState = connectionState,
+                activeRoute = activeRoute,
+                preferredTransport = preferredTransport,
+                connectedPeerName = connectedPeerName,
+                availablePeerCount = discoveredPeers.count { it.status == "AVAILABLE" },
+                sessionStarted = sessionStarted,
+                timeRemaining = timeRemaining,
+                onDisconnect = { showDisconnectConfirm = true }
+            )
+            Spacer(modifier = Modifier.height(WokieSpacing.Medium))
 
-        Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)))
+            Box(modifier = Modifier.weight(1f)) {
+                when {
+                    isPeerListVisible -> {
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            if (sessionState == SessionState.SESSION_EXPIRED) {
+                                Surface(
+                                    shape = MaterialTheme.shapes.medium,
+                                    color = MaterialTheme.colorScheme.surfaceVariant,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(WokieSpacing.Medium),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            Icons.Filled.Info,
+                                            contentDescription = null,
+                                            tint = LocalWokieColors.current.warning
+                                        )
+                                        Spacer(modifier = Modifier.width(WokieSpacing.Small))
+                                        Text(
+                                            "Your previous session ended. Reconnect to start a new encrypted session.",
+                                            style = MaterialTheme.typography.bodySmall
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(WokieSpacing.Medium))
+                            }
 
-        val isPeerListVisible = (connectionState == "IDLE" || connectionState == "DISCONNECTED" || connectionState == "SESSION_EXPIRED" || connectionState == "NONE")
-
-        if (isPeerListVisible) {
-            Spacer(modifier = Modifier.height(16.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("AVAILABLE PEERS", color = Color.Gray, fontSize = 14.sp)
-                if (sessionState == SessionState.SESSION_EXPIRED) {
-                    Text("PREVIOUS SESSION ENDED", color = Color.Yellow, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-                }
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f)) {
-                items(discoveredPeers) { peer ->
-                    Card(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).border(1.dp, Color.DarkGray, RoundedCornerShape(8.dp)),
-                        colors = CardDefaults.cardColors(containerColor = Color.Black)
-                    ) {
-                        Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Column {
-                                Text(peer.name, color = Color.White, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-                                Text("Route: ${peer.route}", color = Color.Gray, fontSize = 12.sp)
-                                if (peer.status == "SESSION_EXPIRED") {
-                                    Text("SESSION EXPIRED", color = Color.Yellow, fontSize = 10.sp)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Nearby peers", style = MaterialTheme.typography.titleMedium)
+                                if (discoveredPeers.isNotEmpty()) {
+                                    Text(
+                                        "${discoveredPeers.size} found",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                 }
                             }
-                            Button(
-                                onClick = { startConnectionToPeer(peer) },
-                                enabled = peer.status == "AVAILABLE" || peer.status == "SESSION_EXPIRED",
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
-                            ) {
-                                Text(
-                                    if (peer.status == "SESSION_EXPIRED") "RECONNECT" else "CONNECT",
-                                    color = MaterialTheme.colorScheme.primary
+                            Spacer(modifier = Modifier.height(WokieSpacing.Small))
+
+                            if (discoveredPeers.isEmpty()) {
+                                EmptyPeersState(
+                                    transportName = transportDisplayName(preferredTransport),
+                                    isExperimental = isExperimentalTransport(preferredTransport),
+                                    onOpenSettings = { showSettings = true },
+                                    modifier = Modifier.weight(1f)
                                 )
+                            } else {
+                                LazyColumn(
+                                    modifier = Modifier.fillMaxWidth().weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(WokieSpacing.Small)
+                                ) {
+                                    items(discoveredPeers) { peer ->
+                                        PeerRow(peer = peer, onConnect = { startConnectionToPeer(peer) })
+                                    }
+                                }
                             }
                         }
                     }
-                }
-            }
-        } else if (connectionState == "CONNECTING" || connectionState == "KEY_EXCHANGE") {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text("ESTABLISHING SECURE SESSION", color = Color.White, fontFamily = FontFamily.Monospace)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("Performing Ephemeral ECDH Key Exchange…", color = Color.Gray, fontSize = 12.sp)
-                }
-            }
-        } else if (connectionState == "FINGERPRINT_VERIFICATION") {
-            Column(
-                modifier = Modifier.fillMaxSize(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Text("VERIFY PEER", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                Spacer(modifier = Modifier.height(16.dp))
-                Text("ECDH_PUB_FP", color = Color.White)
-                Text(peerFingerprint, color = MaterialTheme.colorScheme.primary, fontSize = 24.sp, fontFamily = FontFamily.Monospace)
-                Spacer(modifier = Modifier.height(16.dp))
-                Text("Compare this fingerprint with the other device\nthrough a trusted channel.", color = Color.Gray, fontSize = 12.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                Spacer(modifier = Modifier.height(32.dp))
-                
-                Row {
-                    Button(onClick = { endCurrentSession(markExpired = true) }, colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray)) {
-                        Text("CANCEL")
-                    }
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Button(onClick = { 
-                        connectionState = "SECURE_SESSION"
-                        sessionStarted = true 
-                        coordinator.engine.verifiedPeers.add(connectedPeerName)
-                    }) {
-                        Text("MATCH")
-                    }
-                }
-            }
-        } else if (connectionState == "SECURE_SESSION") {
-            Card(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.DarkGray.copy(alpha = 0.5f))
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp).fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text("SECURE SESSION", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                        Text("ROUTE: $activeRoute • $connectedPeerName", color = Color.White, fontSize = 12.sp)
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("● ENCRYPTED", color = Color.Green, fontSize = 12.sp)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Button(
-                            onClick = { endCurrentSession(markExpired = true) },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.2f)),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+
+                    connectionState == "CONNECTING" || connectionState == "KEY_EXCHANGE" -> {
+                        Column(
+                            modifier = Modifier.fillMaxSize(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
                         ) {
-                            Text("DISCONNECT", color = Color.Red, fontSize = 11.sp)
+                            CircularProgressIndicator()
+                            Spacer(modifier = Modifier.height(WokieSpacing.Medium))
+                            Text("Establishing secure session", style = MaterialTheme.typography.titleMedium)
+                            Spacer(modifier = Modifier.height(WokieSpacing.Small))
+                            Text(
+                                text = if (connectionState == "CONNECTING") {
+                                    "Connecting to $connectedPeerName…"
+                                } else {
+                                    "Exchanging encryption keys (ECDH)…"
+                                },
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.height(WokieSpacing.Large))
+                            TextButton(onClick = { endCurrentSession(markExpired = false) }) {
+                                Text("Cancel")
+                            }
                         }
                     }
-                }
-            }
 
-            LazyColumn(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                state = listState,
-                contentPadding = PaddingValues(vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                item {
-                    val caps = coordinator.getActiveTransportCapabilities()
-                    if (caps.contains(TransportCapability.VOICE)) {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                            Box(modifier = Modifier
-                                .background(Color.DarkGray.copy(alpha = 0.5f), RoundedCornerShape(24.dp))
-                                .padding(horizontal = 32.dp, vertical = 16.dp)
+                    connectionState == "FINGERPRINT_VERIFICATION" -> {
+                        Column(
+                            modifier = Modifier.fillMaxSize(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Surface(
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                modifier = Modifier.size(72.dp)
                             ) {
-                                Text(
-                                    "VOICE EXPERIMENTAL",
-                                    color = Color.Gray,
-                                    fontWeight = FontWeight.Bold
-                                )
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        Icons.Filled.Lock,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier.size(32.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(WokieSpacing.Medium))
+                            Text("Verify your peer", style = MaterialTheme.typography.headlineSmall)
+                            Spacer(modifier = Modifier.height(WokieSpacing.Small))
+                            Text(
+                                "Compare this code with the one on $connectedPeerName's phone. " +
+                                    "Only continue if they match exactly — this is what stops a man-in-the-middle.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.height(WokieSpacing.Large))
+                            Card(
+                                shape = MaterialTheme.shapes.large,
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(WokieSpacing.Medium),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text(
+                                        "PEER FINGERPRINT",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(modifier = Modifier.height(WokieSpacing.Small))
+                                    Text(
+                                        peerFingerprint.chunked(4).joinToString(" "),
+                                        style = MaterialTheme.typography.titleLarge,
+                                        fontFamily = FontFamily.Monospace,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(WokieSpacing.ExtraLarge))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(WokieSpacing.Small)
+                            ) {
+                                OutlinedButton(
+                                    onClick = { endCurrentSession(markExpired = true) },
+                                    modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        contentColor = MaterialTheme.colorScheme.error
+                                    )
+                                ) {
+                                    Text("Don't match")
+                                }
+                                Button(
+                                    onClick = {
+                                        connectionState = "SECURE_SESSION"
+                                        sessionStarted = true
+                                        coordinator.engine.verifiedPeers.add(connectedPeerName)
+                                    },
+                                    modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+                                ) {
+                                    Icon(Icons.Filled.Check, contentDescription = null)
+                                    Spacer(modifier = Modifier.width(WokieSpacing.ExtraSmall))
+                                    Text("They match")
+                                }
+                            }
+                        }
+                    }
+
+                    connectionState == "SECURE_SESSION" -> {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            state = listState,
+                            contentPadding = PaddingValues(vertical = WokieSpacing.Small),
+                            verticalArrangement = Arrangement.spacedBy(WokieSpacing.ExtraSmall)
+                        ) {
+                            item {
+                                val caps = coordinator.getActiveTransportCapabilities()
+                                if (caps.contains(TransportCapability.VOICE)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.Center
+                                    ) {
+                                        Surface(
+                                            shape = RoundedCornerShape(24.dp),
+                                            color = MaterialTheme.colorScheme.surfaceVariant
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(
+                                                    horizontal = WokieSpacing.Medium,
+                                                    vertical = WokieSpacing.Small
+                                                ),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Icon(
+                                                    Icons.Filled.Call,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(16.dp),
+                                                    tint = LocalWokieColors.current.warning
+                                                )
+                                                Spacer(modifier = Modifier.width(WokieSpacing.Small))
+                                                Text(
+                                                    "Voice push-to-talk is experimental",
+                                                    style = MaterialTheme.typography.labelMedium,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            if (messages.isEmpty()) {
+                                item {
+                                    Box(
+                                        modifier = Modifier.fillMaxWidth().padding(WokieSpacing.Large),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            "Say hello — everything you send is end-to-end encrypted.",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
+                                }
+                            }
+                            items(messages) { msg ->
+                                MessageBubble(msg)
                             }
                         }
                     }
                 }
-                items(messages) { msg ->
-                    MessageBubble(msg)
+            }
+        }
+    }
+
+    if (showDisconnectConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDisconnectConfirm = false },
+            title = { Text("End secure session?") },
+            text = {
+                Text(
+                    "You'll disconnect from $connectedPeerName. To chat again you'll need to " +
+                        "reconnect and verify the fingerprint."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDisconnectConfirm = false
+                    endCurrentSession(markExpired = true)
+                }) {
+                    Text("Disconnect", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDisconnectConfirm = false }) {
+                    Text("Cancel")
                 }
             }
+        )
+    }
+}
 
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(
-                    value = inputText,
-                    onValueChange = { inputText = it },
-                    modifier = Modifier.weight(1f),
-                    placeholder = { Text("Encrypted message...") },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = Color.DarkGray,
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White
-                    ),
-                    shape = RoundedCornerShape(8.dp),
-                    singleLine = true
+/**
+ * Honest connection status banner: never claims more than the state machine
+ * knows. Shows the live state, the transport actually in use, and — during a
+ * session — the peer, remaining session time and a disconnect action.
+ */
+@Composable
+fun ConnectionStatusBanner(
+    connectionState: String,
+    activeRoute: String?,
+    preferredTransport: String,
+    connectedPeerName: String,
+    availablePeerCount: Int,
+    sessionStarted: Boolean,
+    timeRemaining: Int,
+    onDisconnect: () -> Unit
+) {
+    val extras = LocalWokieColors.current
+    val isSecure = connectionState == "SECURE_SESSION"
+    val isConnecting = connectionState == "CONNECTING" || connectionState == "KEY_EXCHANGE"
+    val routeReady = activeRoute != null && activeRoute != "NONE"
+
+    val icon = when {
+        isSecure -> Icons.Filled.Lock
+        isConnecting -> Icons.Filled.Refresh
+        routeReady -> Icons.Filled.Check
+        else -> Icons.Filled.Search
+    }
+    val iconTint = when {
+        isSecure -> extras.success
+        isConnecting -> extras.warning
+        else -> MaterialTheme.colorScheme.primary
+    }
+    val title = when {
+        isSecure -> "Secure session"
+        isConnecting -> "Connecting…"
+        routeReady -> "Network ready"
+        else -> "Searching for peers"
+    }
+    val subtitle = when {
+        isSecure -> "$connectedPeerName · via ${transportDisplayName(activeRoute ?: "")}"
+        isConnecting -> "Finding the best route and securing the session…"
+        routeReady -> "via ${transportDisplayName(activeRoute ?: "")} · preferred: ${transportDisplayName(preferredTransport)}"
+        else -> "${transportDisplayName(preferredTransport)} · $availablePeerCount peers available"
+    }
+
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = WokieSpacing.Medium, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, contentDescription = null, tint = iconTint)
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleSmall)
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(modifier = Modifier.width(8.dp))
-                Button(
-                    onClick = {
-                        if (inputText.isNotEmpty() && encryptionManager.isReady) {
-                            val text = inputText
-                            inputText = ""
-                            
-                            val envId = UUID.randomUUID().toString()
-                            val currentSeq = ++sendSequenceNumber
-                            val aad = (sessionId + envId + currentSeq).toByteArray(Charsets.UTF_8)
-                            val encrypted = encryptionManager.encrypt(text.toByteArray(Charsets.UTF_8), aad)
-                            if (encrypted != null) {
-                                val env = MessageEnvelope(
-                                    messageId = envId,
-                                    sequenceNumber = currentSeq,
-                                    messageType = "ENCRYPTED_MESSAGE",
-                                    sessionId = sessionId,
-                                    senderNodeId = localNodeId,
-                                    ciphertext = encrypted
-                                )
-                                val serialized = env.toJson().toByteArray(Charsets.UTF_8)
-                                val wokiePacket = WokiePacket(
-                                    packetType = WokiePacketType.ENCRYPTED_MESSAGE,
-                                    senderNodeId = localNodeId,
-                                    packetId = envId,
-                                    payload = serialized
-                                )
-                                coordinator.send(wokiePacket.toByteArray())
-                                messages.add(Message(text, isSent = true))
-                                scope.launch { listState.animateScrollToItem(messages.size) }
-                            }
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
-                    shape = RoundedCornerShape(8.dp)
+            }
+            if (isSecure && sessionStarted) {
+                Surface(
+                    shape = RoundedCornerShape(24.dp),
+                    color = MaterialTheme.colorScheme.surface
                 ) {
-                    Text("SEND", color = MaterialTheme.colorScheme.primary)
+                    Text(
+                        text = "${timeRemaining / 60}:${(timeRemaining % 60).toString().padStart(2, '0')}",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontFamily = FontFamily.Monospace,
+                        color = if (timeRemaining < 30) MaterialTheme.colorScheme.error
+                        else MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(WokieSpacing.Small))
+                TextButton(
+                    onClick = onDisconnect,
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("Disconnect")
                 }
             }
         }
     }
 }
 
+/** Empty state for the peer hub: explains what to do instead of a blank list. */
+@Composable
+fun EmptyPeersState(
+    transportName: String,
+    isExperimental: Boolean,
+    onOpenSettings: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier.fillMaxWidth().padding(WokieSpacing.Large),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Surface(
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.primaryContainer,
+            modifier = Modifier.size(72.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    Icons.Filled.Search,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(WokieSpacing.Medium))
+        Text("No peers found yet", style = MaterialTheme.typography.titleMedium)
+        Spacer(modifier = Modifier.height(WokieSpacing.Small))
+        Text(
+            "Open Wokie on the other phone, keep both phones close, and make sure both use " +
+                "the same transport ($transportName). Discovery can take a few seconds.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+        if (isExperimental) {
+            Spacer(modifier = Modifier.height(WokieSpacing.Small))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Filled.Warning,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = LocalWokieColors.current.warning
+                )
+                Spacer(modifier = Modifier.width(WokieSpacing.ExtraSmall))
+                Text(
+                    "$transportName is experimental — Nearby is the reliable path.",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = LocalWokieColors.current.warning,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(WokieSpacing.Medium))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+            Spacer(modifier = Modifier.width(WokieSpacing.Small))
+            Text(
+                "Scanning…",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Spacer(modifier = Modifier.height(WokieSpacing.Medium))
+        OutlinedButton(
+            onClick = onOpenSettings,
+            modifier = Modifier.heightIn(min = 48.dp)
+        ) {
+            Text("Transport settings")
+        }
+    }
+}
+
+/** One discovered peer: avatar initials, honest status, connect action. */
+@Composable
+fun PeerRow(peer: PeerNode, onConnect: () -> Unit) {
+    val extras = LocalWokieColors.current
+    val canConnect = peer.status == "AVAILABLE" || peer.status == "SESSION_EXPIRED"
+    Card(
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp).fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            PeerAvatar(name = peer.name)
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(peer.name, style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "via ${transportDisplayName(peer.route)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                when (peer.status) {
+                    "SESSION_EXPIRED" -> Text(
+                        "Session expired",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = extras.warning
+                    )
+                    "CONNECTING" -> Text(
+                        "Connecting…",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    "LOST" -> Text(
+                        "Connection lost",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+            FilledTonalButton(
+                onClick = onConnect,
+                enabled = canConnect,
+                modifier = Modifier.heightIn(min = 48.dp)
+            ) {
+                Text(if (peer.status == "SESSION_EXPIRED") "Reconnect" else "Connect")
+            }
+        }
+    }
+}
+
+@Composable
+fun PeerAvatar(name: String) {
+    Surface(
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.primaryContainer,
+        modifier = Modifier.size(48.dp)
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                peerInitials(name),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+        }
+    }
+}
+
+/** Messenger-style input bar: rounded field + round send button. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MessageInputBar(
+    text: String,
+    onTextChange: (String) -> Unit,
+    onSend: () -> Unit,
+    canSend: Boolean
+) {
+    Surface(color = MaterialTheme.colorScheme.background) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .imePadding()
+                .padding(horizontal = 12.dp, vertical = WokieSpacing.Small),
+            verticalAlignment = Alignment.Bottom
+        ) {
+            TextField(
+                value = text,
+                onValueChange = onTextChange,
+                modifier = Modifier.weight(1f),
+                placeholder = { Text("Message") },
+                shape = RoundedCornerShape(28.dp),
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent,
+                    disabledIndicatorColor = Color.Transparent
+                ),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                keyboardActions = KeyboardActions(onSend = { onSend() }),
+                maxLines = 4
+            )
+            Spacer(modifier = Modifier.width(WokieSpacing.Small))
+            FilledIconButton(
+                onClick = onSend,
+                enabled = canSend,
+                modifier = Modifier.size(48.dp)
+            ) {
+                Icon(Icons.Filled.Send, contentDescription = "Send message")
+            }
+        }
+    }
+}
+
+/** Friendly display name for a transport id used across settings/coordinator. */
+fun transportDisplayName(transport: String): String = when {
+    transport.equals("NEARBY", ignoreCase = true) -> "Nearby"
+    transport.contains("BLE", ignoreCase = true) -> "BLE Mesh"
+    transport.contains("WIFI", ignoreCase = true) -> "Wi-Fi Direct"
+    transport.contains("HOTSPOT", ignoreCase = true) -> "Local Hotspot"
+    transport.contains("CELLULAR", ignoreCase = true) -> "Cellular"
+    transport.contains("INTERNET", ignoreCase = true) -> "Internet relay"
+    transport.contains("SATELLITE", ignoreCase = true) -> "Satellite"
+    transport.isBlank() -> "—"
+    else -> transport
+}
+
+/**
+ * Honest capability labelling (mirrors the Settings transport list): only
+ * Nearby is a verified path; every other transport is experimental.
+ */
+fun isExperimentalTransport(transport: String): Boolean =
+    !transport.equals("NEARBY", ignoreCase = true)
+
+private fun peerInitials(name: String): String {
+    val parts = name.trim().split(Regex("[\\s_\\-]+")).filter { it.isNotEmpty() }
+    return when {
+        parts.isEmpty() -> "?"
+        parts.size == 1 -> parts[0].take(2).uppercase()
+        else -> (parts[0].take(1) + parts[1].take(1)).uppercase()
+    }
+}
+
+private fun formatMessageTime(timestamp: Long): String =
+    SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(timestamp))
+
 @Composable
 fun MessageBubble(message: Message) {
     var displayText by remember { mutableStateOf(if (message.isSent) message.text else generateRandomHex(message.text.length + 5)) }
     var isDecrypting by remember { mutableStateOf(!message.isSent) }
-    
+
     if (isDecrypting) {
         LaunchedEffect(message.text) {
             val target = message.text
@@ -817,27 +1289,41 @@ fun MessageBubble(message: Message) {
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 2.dp),
-        contentAlignment = if (message.isSent) Alignment.CenterEnd else Alignment.CenterStart
+    val isSent = message.isSent
+    // Messenger-style tail: the small corner sits on the sender's side, bottom.
+    val bubbleShape = if (isSent) {
+        RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 4.dp)
+    } else {
+        RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomStart = 4.dp, bottomEnd = 18.dp)
+    }
+    val containerColor = if (isSent) MaterialTheme.colorScheme.primaryContainer
+        else MaterialTheme.colorScheme.surfaceVariant
+    val contentColor = if (isSent) MaterialTheme.colorScheme.onPrimaryContainer
+        else MaterialTheme.colorScheme.onSurface
+
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = WokieSpacing.ExtraSmall),
+        horizontalArrangement = if (isSent) Arrangement.End else Arrangement.Start
     ) {
-        Card(
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = if (message.isSent) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else Color(0xFF1E1E24)
-            ),
-            border = if (message.isSent) BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)) else null
+        Column(
+            modifier = Modifier
+                .widthIn(max = 320.dp)
+                .background(containerColor, bubbleShape)
+                .padding(horizontal = 14.dp, vertical = WokieSpacing.Small),
+            horizontalAlignment = if (isSent) Alignment.End else Alignment.Start
         ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                Text(
-                    text = displayText,
-                    color = Color.White,
-                    fontSize = 14.sp,
-                    fontFamily = if (isDecrypting) FontFamily.Monospace else FontFamily.Default
-                )
-            }
+            Text(
+                text = displayText,
+                style = MaterialTheme.typography.bodyLarge,
+                color = contentColor,
+                fontFamily = if (isDecrypting) FontFamily.Monospace else FontFamily.Default
+            )
+            Text(
+                text = formatMessageTime(message.timestamp),
+                style = MaterialTheme.typography.labelSmall,
+                color = contentColor.copy(alpha = 0.7f),
+                modifier = Modifier.padding(top = 2.dp)
+            )
         }
     }
 }
