@@ -29,3 +29,9 @@ ui_*.xml
 window*.xml
 screen_*.png
 screenshot_*.png
+
+# Release signing material — never commit
+*.jks
+*.keystore
+key.properties
+release.keystore
