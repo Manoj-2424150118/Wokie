@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -18,6 +20,7 @@ import com.wokie.message.security.LockTimeout
 import com.wokie.message.security.PrivacyManager
 import com.wokie.message.mesh.NearbyDiscoveryManager
 import com.wokie.message.transport.HotspotCapabilityStatus
+import com.wokie.message.ui.theme.LocalWokieColors
 
 @Composable
 fun SettingsScreen(
@@ -55,28 +58,30 @@ fun SettingsScreen(
     var showPinDialog by remember { mutableStateOf(false) }
     var pinDialogMode by remember { mutableStateOf("CREATE") } // "CREATE", "CHANGE"
     var showDiagnostics by remember { mutableStateOf(false) }
+    var showSelfDestructConfirm by remember { mutableStateOf(false) }
+    val extras = LocalWokieColors.current
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF050505))
+            .background(MaterialTheme.colorScheme.background)
             .safeDrawingPadding()
             .padding(16.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Button(onClick = onBack, colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray)) {
-                Text("BACK")
+            IconButton(onClick = onBack) {
+                Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
             }
-            Spacer(modifier = Modifier.width(16.dp))
-            Text("WOKIE SETTINGS", color = Color(0xFF00F3FF), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Settings", style = MaterialTheme.typography.titleLarge)
         }
         
         Spacer(modifier = Modifier.height(24.dp))
         
         LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp)) {
             item {
-                Text("SECURITY", color = Color.Gray, fontSize = 14.sp)
-                Divider(color = Color.DarkGray, modifier = Modifier.padding(vertical = 8.dp))
+                Text("SECURITY", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+                Divider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(vertical = 8.dp))
             }
             
             item {
@@ -86,8 +91,8 @@ fun SettingsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column {
-                        Text("Protect Wokie when opening", color = Color.White)
-                        Text(if (isAppLockEnabled) "App Lock ON" else "App Lock OFF", color = Color.Gray, fontSize = 12.sp)
+                        Text("Protect Wokie when opening", color = MaterialTheme.colorScheme.onSurface)
+                        Text(if (isAppLockEnabled) "App Lock ON" else "App Lock OFF", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                     }
                     Switch(
                         checked = isAppLockEnabled,
@@ -95,23 +100,23 @@ fun SettingsScreen(
                             isAppLockEnabled = it
                             appLockManager.isAppLockEnabled = it
                         },
-                        colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFF00F3FF), checkedTrackColor = Color(0xFF00F3FF).copy(alpha = 0.5f))
+                        colors = SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.primary, checkedTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
                     )
                 }
             }
 
             if (isAppLockEnabled) {
                 item {
-                    Text("Authentication method", color = Color.White, modifier = Modifier.padding(top = 8.dp))
+                    Text("Authentication method", color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.padding(top = 8.dp))
                     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
                         Button(
                             onClick = { 
                                 authMethod = AuthMethod.DEVICE_CREDENTIAL_OR_BIOMETRIC
                                 appLockManager.authMethod = AuthMethod.DEVICE_CREDENTIAL_OR_BIOMETRIC
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = if (authMethod == AuthMethod.DEVICE_CREDENTIAL_OR_BIOMETRIC) Color(0xFF00F3FF) else Color.DarkGray)
+                            colors = ButtonDefaults.buttonColors(containerColor = if (authMethod == AuthMethod.DEVICE_CREDENTIAL_OR_BIOMETRIC) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
                         ) {
-                            Text("Biometric / Device", color = if (authMethod == AuthMethod.DEVICE_CREDENTIAL_OR_BIOMETRIC) Color.Black else Color.White)
+                            Text("Biometric / Device", color = if (authMethod == AuthMethod.DEVICE_CREDENTIAL_OR_BIOMETRIC) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface)
                         }
                         Button(
                             onClick = { 
@@ -123,16 +128,16 @@ fun SettingsScreen(
                                     appLockManager.authMethod = AuthMethod.WOKIE_PIN
                                 }
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = if (authMethod == AuthMethod.WOKIE_PIN) Color(0xFF00F3FF) else Color.DarkGray)
+                            colors = ButtonDefaults.buttonColors(containerColor = if (authMethod == AuthMethod.WOKIE_PIN) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
                         ) {
-                            Text("Wokie PIN", color = if (authMethod == AuthMethod.WOKIE_PIN) Color.Black else Color.White)
+                            Text("Wokie PIN", color = if (authMethod == AuthMethod.WOKIE_PIN) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface)
                         }
                     }
                     if (authMethod == AuthMethod.WOKIE_PIN && appLockManager.hasPinSet()) {
                         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.End) {
                             Text(
                                 "Change PIN",
-                                color = Color(0xFF00F3FF),
+                                color = MaterialTheme.colorScheme.primary,
                                 fontSize = 12.sp,
                                 modifier = Modifier.clickable {
                                     pinDialogMode = "CHANGE"
@@ -144,7 +149,7 @@ fun SettingsScreen(
                 }
 
                 item {
-                    Text("Lock when", color = Color.White, modifier = Modifier.padding(top = 8.dp))
+                    Text("Lock when", color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.padding(top = 8.dp))
                     val timeouts = LockTimeout.values()
                     Column {
                         timeouts.forEach { timeout ->
@@ -161,9 +166,9 @@ fun SettingsScreen(
                                         lockTimeout = timeout
                                         appLockManager.lockTimeout = timeout
                                     },
-                                    colors = RadioButtonDefaults.colors(selectedColor = Color(0xFF00F3FF))
+                                    colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary)
                                 )
-                                Text(timeout.name.replace("_", " "), color = Color.White)
+                                Text(timeout.name.replace("_", " "), color = MaterialTheme.colorScheme.onSurface)
                             }
                         }
                     }
@@ -176,8 +181,8 @@ fun SettingsScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Destroy active E2EE session", color = Color.White)
-                            Text("Purge keys when locked", color = Color.Gray, fontSize = 12.sp)
+                            Text("Destroy active E2EE session", color = MaterialTheme.colorScheme.onSurface)
+                            Text("Purge keys when locked", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                         }
                         Switch(
                             checked = destroySession,
@@ -185,7 +190,7 @@ fun SettingsScreen(
                                 destroySession = it
                                 appLockManager.destroySessionOnLock = it
                             },
-                            colors = SwitchDefaults.colors(checkedThumbColor = Color.Red, checkedTrackColor = Color.Red.copy(alpha = 0.5f))
+                            colors = SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.error, checkedTrackColor = MaterialTheme.colorScheme.error.copy(alpha = 0.5f))
                         )
                     }
                 }
@@ -193,12 +198,12 @@ fun SettingsScreen(
 
             item {
                 Spacer(modifier = Modifier.height(16.dp))
-                Text("NETWORK (PHASE 19)", color = Color.Gray, fontSize = 14.sp)
-                Divider(color = Color.DarkGray, modifier = Modifier.padding(vertical = 8.dp))
+                Text("NETWORK", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+                Divider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(vertical = 8.dp))
             }
             
             item {
-                Text("Preferred Transport", color = Color.White, modifier = Modifier.padding(top = 8.dp))
+                Text("Preferred Transport", color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.padding(top = 8.dp))
                 data class TransportItem(val id: String, val label: String, val status: String, val isSelectable: Boolean)
                 val hotspotStatusText = when (hotspotStatus) {
                     HotspotCapabilityStatus.PERMISSION_REQUIRED -> "PERMISSION REQUIRED"
@@ -238,25 +243,25 @@ fun SettingsScreen(
                                 selected = isSelected,
                                 onClick = if (t.isSelectable) { { onTransportChanged(t.id) } } else null,
                                 colors = RadioButtonDefaults.colors(
-                                    selectedColor = Color(0xFF00F3FF),
-                                    unselectedColor = if (t.isSelectable) Color.Gray else Color.DarkGray,
-                                    disabledSelectedColor = Color.DarkGray,
-                                    disabledUnselectedColor = Color.DarkGray
+                                    selectedColor = MaterialTheme.colorScheme.primary,
+                                    unselectedColor = if (t.isSelectable) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.outlineVariant,
+                                    disabledSelectedColor = MaterialTheme.colorScheme.outlineVariant,
+                                    disabledUnselectedColor = MaterialTheme.colorScheme.outlineVariant
                                 ),
                                 enabled = t.isSelectable
                             )
                             Column {
                                 Text(
                                     t.label, 
-                                    color = if (t.isSelectable) Color.White else Color.Gray,
+                                    color = if (t.isSelectable) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                                 )
                                 Text(
                                     t.status, 
                                     color = when (t.status) {
-                                        "READY" -> Color.Green
-                                        "EXPERIMENTAL" -> Color.Yellow
-                                        else -> Color.Red
+                                        "READY" -> extras.success
+                                        "EXPERIMENTAL" -> extras.warning
+                                        else -> MaterialTheme.colorScheme.error
                                     }, 
                                     fontSize = 10.sp
                                 )
@@ -274,13 +279,13 @@ fun SettingsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Smart Fallback", color = Color.White)
-                        Text("Auto-fallback to best available transport if preferred fails", color = Color.Gray, fontSize = 12.sp)
+                        Text("Smart Fallback", color = MaterialTheme.colorScheme.onSurface)
+                        Text("Auto-fallback to best available transport if preferred fails", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                     }
                     Switch(
                         checked = smartFallback,
                         onCheckedChange = { onSmartFallbackChanged(it) },
-                        colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFF00F3FF), checkedTrackColor = Color(0xFF00F3FF).copy(alpha = 0.5f))
+                        colors = SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.primary, checkedTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
                     )
                 }
             }
@@ -293,13 +298,13 @@ fun SettingsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Auto Connect", color = Color.White)
-                        Text("Automatically attempt connection to available peers", color = Color.Gray, fontSize = 12.sp)
+                        Text("Auto Connect", color = MaterialTheme.colorScheme.onSurface)
+                        Text("Automatically attempt connection to available peers", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                     }
                     Switch(
                         checked = autoConnect,
                         onCheckedChange = { onAutoConnectChanged(it) },
-                        colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFF00F3FF), checkedTrackColor = Color(0xFF00F3FF).copy(alpha = 0.5f))
+                        colors = SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.primary, checkedTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
                     )
                 }
             }
@@ -312,8 +317,8 @@ fun SettingsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Nearby Mode", color = Color.White)
-                        Text("Discovery does not verify identity.", color = Color.Yellow, fontSize = 12.sp)
+                        Text("Nearby Mode", color = MaterialTheme.colorScheme.onSurface)
+                        Text("Discovery does not verify identity.", color = extras.warning, fontSize = 12.sp)
                     }
                     Switch(
                         checked = nearbyMode, 
@@ -321,7 +326,7 @@ fun SettingsScreen(
                             nearbyMode = it
                             discoveryManager.nearbyModeEnabled = it
                         },
-                        colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFF00F3FF), checkedTrackColor = Color(0xFF00F3FF).copy(alpha = 0.5f))
+                        colors = SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.primary, checkedTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
                     )
                 }
             }
@@ -334,7 +339,7 @@ fun SettingsScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Visible to Nearby Users", color = Color.White)
+                            Text("Visible to Nearby Users", color = MaterialTheme.colorScheme.onSurface)
                         }
                         Switch(
                             checked = visibleToOthers,
@@ -342,7 +347,7 @@ fun SettingsScreen(
                                 visibleToOthers = it
                                 discoveryManager.visibleToOthers = it
                             },
-                            colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFF00F3FF), checkedTrackColor = Color(0xFF00F3FF).copy(alpha = 0.5f))
+                            colors = SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.primary, checkedTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
                         )
                     }
                 }
@@ -354,8 +359,8 @@ fun SettingsScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Auto-Accept Requests", color = Color.White)
-                            Text("OFF by default", color = Color.Gray, fontSize = 12.sp)
+                            Text("Auto-Accept Requests", color = MaterialTheme.colorScheme.onSurface)
+                            Text("OFF by default", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                         }
                         Switch(
                             checked = autoAccept, 
@@ -363,13 +368,13 @@ fun SettingsScreen(
                                 autoAccept = it
                                 discoveryManager.autoAccept = it
                             },
-                            colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFF00F3FF), checkedTrackColor = Color(0xFF00F3FF).copy(alpha = 0.5f))
+                            colors = SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.primary, checkedTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
                         )
                     }
                 }
                 
                 item {
-                    Text("Discovery Duration", color = Color.White, modifier = Modifier.padding(top = 8.dp))
+                    Text("Discovery Duration", color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.padding(top = 8.dp))
                     val durations = listOf(
                         Pair(10, "10 minutes"), 
                         Pair(30, "30 minutes"), 
@@ -390,9 +395,9 @@ fun SettingsScreen(
                                         discoveryDuration = d.first
                                         discoveryManager.discoveryDurationMinutes = d.first
                                     },
-                                    colors = RadioButtonDefaults.colors(selectedColor = Color(0xFF00F3FF))
+                                    colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary)
                                 )
-                                Text(d.second, color = Color.White)
+                                Text(d.second, color = MaterialTheme.colorScheme.onSurface)
                             }
                         }
                     }
@@ -403,7 +408,7 @@ fun SettingsScreen(
                 Spacer(modifier = Modifier.height(8.dp))
                 Card(
                     modifier = Modifier.fillMaxWidth().clickable { showDiagnostics = !showDiagnostics },
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF141416))
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Row(
@@ -411,19 +416,19 @@ fun SettingsScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("Connection Diagnostics", color = Color(0xFF00F3FF), fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            Text(if (showDiagnostics) "▲" else "▼", color = Color.Gray, fontSize = 12.sp)
+                            Text("Connection Diagnostics", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text(if (showDiagnostics) "▲" else "▼", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                         }
                         if (showDiagnostics) {
                             Spacer(modifier = Modifier.height(8.dp))
-                            Text("Preferred: $activeTransportType", color = Color.White, fontSize = 12.sp)
-                            Text("Active Route: $activeRoute", color = Color.White, fontSize = 12.sp)
-                            Text("Target Peer: $activePeer", color = Color.White, fontSize = 12.sp)
-                            Text("Session State: $sessionStateText", color = Color.White, fontSize = 12.sp)
-                            Text("Route Health: GOOD", color = Color.Green, fontSize = 12.sp)
-                            Text("Fallback Policy: ${if (smartFallback) "PREFERRED + SMART FALLBACK" else "PREFERRED ONLY"}", color = Color.Gray, fontSize = 12.sp)
-                            Text("Auto Connect: ${if (autoConnect) "ENABLED" else "DISABLED"}", color = Color.Gray, fontSize = 12.sp)
-                            Text("Crypto: ECDH P-256 + AES-GCM-256 (Tink)", color = Color.Gray, fontSize = 12.sp)
+                            Text("Preferred: $activeTransportType", color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp)
+                            Text("Active Route: $activeRoute", color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp)
+                            Text("Target Peer: $activePeer", color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp)
+                            Text("Session State: $sessionStateText", color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp)
+                            Text("Route Health: GOOD", color = extras.success, fontSize = 12.sp)
+                            Text("Fallback Policy: ${if (smartFallback) "PREFERRED + SMART FALLBACK" else "PREFERRED ONLY"}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                            Text("Auto Connect: ${if (autoConnect) "ENABLED" else "DISABLED"}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                            Text("Crypto: ECDH P-256 + AES-GCM-256 (Tink)", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                         }
                     }
                 }
@@ -431,8 +436,8 @@ fun SettingsScreen(
 
             item {
                 Spacer(modifier = Modifier.height(16.dp))
-                Text("PRIVACY", color = Color.Gray, fontSize = 14.sp)
-                Divider(color = Color.DarkGray, modifier = Modifier.padding(vertical = 8.dp))
+                Text("PRIVACY", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+                Divider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(vertical = 8.dp))
             }
 
             item {
@@ -442,7 +447,7 @@ fun SettingsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Hide notification content", color = Color.White)
+                        Text("Hide notification content", color = MaterialTheme.colorScheme.onSurface)
                     }
                     Switch(
                         checked = hideNotifications,
@@ -450,7 +455,7 @@ fun SettingsScreen(
                             hideNotifications = it
                             privacyManager.hideNotificationContent = it
                         },
-                        colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFF00F3FF), checkedTrackColor = Color(0xFF00F3FF).copy(alpha = 0.5f))
+                        colors = SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.primary, checkedTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
                     )
                 }
             }
@@ -462,8 +467,8 @@ fun SettingsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Block screenshots", color = Color.White)
-                        Text("Requires app restart", color = Color.Gray, fontSize = 12.sp)
+                        Text("Block screenshots", color = MaterialTheme.colorScheme.onSurface)
+                        Text("Requires app restart", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                     }
                     Switch(
                         checked = blockScreenshots,
@@ -471,7 +476,7 @@ fun SettingsScreen(
                             blockScreenshots = it
                             privacyManager.blockScreenshots = it
                         },
-                        colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFF00F3FF), checkedTrackColor = Color(0xFF00F3FF).copy(alpha = 0.5f))
+                        colors = SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.primary, checkedTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
                     )
                 }
             }
@@ -483,7 +488,7 @@ fun SettingsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Clipboard protection", color = Color.White)
+                        Text("Clipboard protection", color = MaterialTheme.colorScheme.onSurface)
                     }
                     Switch(
                         checked = clipboardProtection,
@@ -491,36 +496,65 @@ fun SettingsScreen(
                             clipboardProtection = it
                             privacyManager.clipboardProtection = it
                         },
-                        colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFF00F3FF), checkedTrackColor = Color(0xFF00F3FF).copy(alpha = 0.5f))
+                        colors = SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.primary, checkedTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
                     )
                 }
             }
             item {
                 Spacer(modifier = Modifier.height(16.dp))
-                Text("EMERGENCY (PHASE 23)", color = Color.Red, fontSize = 14.sp)
-                Divider(color = Color.DarkGray, modifier = Modifier.padding(vertical = 8.dp))
+                Text("EMERGENCY", color = MaterialTheme.colorScheme.error, fontSize = 14.sp)
+                Divider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(vertical = 8.dp))
             }
 
             item {
                 Button(
                     onClick = onExport,
                     modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray)
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 ) {
-                    Text("Export Keys & Logs to Logcat", color = Color.White)
+                    Text("Export Keys & Logs to Logcat")
                 }
             }
 
             item {
                 Button(
-                    onClick = onSelfDestruct,
+                    onClick = { showSelfDestructConfirm = true },
                     modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    )
                 ) {
-                    Text("SELF-DESTRUCT (Wipe & Kill)", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text("SELF-DESTRUCT (Wipe & Kill)", fontWeight = FontWeight.Bold)
                 }
             }
         }
+    }
+
+    if (showSelfDestructConfirm) {
+        AlertDialog(
+            onDismissRequest = { showSelfDestructConfirm = false },
+            title = { Text("Self-destruct?") },
+            text = {
+                Text("This wipes the current session and closes Wokie immediately. This cannot be undone.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showSelfDestructConfirm = false
+                    onSelfDestruct()
+                }) {
+                    Text("Wipe & close", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSelfDestructConfirm = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 
     if (showPinDialog) {
@@ -580,7 +614,7 @@ fun PinDialog(
                     )
                 }
                 if (errorMessage.isNotEmpty()) {
-                    Text(errorMessage, color = Color.Red, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+                    Text(errorMessage, color = MaterialTheme.colorScheme.error, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
                 }
             }
         },
