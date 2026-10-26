@@ -150,9 +150,9 @@ class WifiDirectTransport(
     override fun send(packet: ByteArray) {
         thread {
             try {
-                outputStream?.write(packet.size) // Write size first (simplification)
-                outputStream?.write(packet)
-                outputStream?.flush()
+                // 4-byte length-prefixed framing (see PacketFraming). The old
+                // single-byte size corrupted every packet over 255 bytes.
+                outputStream?.let { PacketFraming.writePacket(it, packet) }
             } catch (e: Exception) {
                 Log.e("WifiDirect", "Send failed", e)
             }
@@ -190,17 +190,12 @@ class WifiDirectTransport(
         isRunning = true
         onConnectedCallback?.invoke()
         
-        // Read loop
-        val buffer = ByteArray(8192)
+        // Read loop (PacketFraming loops until the full packet has arrived;
+        // a single read() is not guaranteed to fill the buffer over TCP)
         while (isRunning) {
             try {
-                val size = inputStream?.read() ?: -1
-                if (size == -1) break
-                val bytesRead = inputStream?.read(buffer, 0, size) ?: -1
-                if (bytesRead > 0) {
-                    val packet = buffer.copyOfRange(0, bytesRead)
-                    onMessageReceived?.invoke(packet)
-                }
+                val packet = inputStream?.let { PacketFraming.readPacket(it) } ?: break
+                onMessageReceived?.invoke(packet)
             } catch (e: Exception) {
                 break
             }

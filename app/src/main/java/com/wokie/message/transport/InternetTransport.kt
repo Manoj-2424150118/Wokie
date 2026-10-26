@@ -89,10 +89,9 @@ class InternetTransport(
     override fun send(packet: ByteArray) {
         thread {
             try {
-                // Prepend packet size and dest node ID for relay (simplified)
-                outputStream?.write(packet.size)
-                outputStream?.write(packet)
-                outputStream?.flush()
+                // 4-byte length-prefixed framing (see PacketFraming). The old
+                // single-byte size corrupted every packet over 255 bytes.
+                outputStream?.let { PacketFraming.writePacket(it, packet) }
             } catch (e: Exception) {
                 Log.e("InternetTransport", "Send failed", e)
             }
@@ -109,22 +108,14 @@ class InternetTransport(
                 isRunning = true
                 onConnectedCallback?.invoke()
                 
-                // Identify self to relay
+                // Identify self to relay (same framing as packets)
                 val idBytes = localNodeId.toByteArray()
-                outputStream?.write(idBytes.size)
-                outputStream?.write(idBytes)
-                outputStream?.flush()
+                outputStream?.let { PacketFraming.writePacket(it, idBytes) }
 
-                val buffer = ByteArray(8192)
                 while (isRunning) {
                     try {
-                        val size = inputStream?.read() ?: -1
-                        if (size == -1) break
-                        val bytesRead = inputStream?.read(buffer, 0, size) ?: -1
-                        if (bytesRead > 0) {
-                            val packet = buffer.copyOfRange(0, bytesRead)
-                            onMessageReceived?.invoke(packet)
-                        }
+                        val packet = inputStream?.let { PacketFraming.readPacket(it) } ?: break
+                        onMessageReceived?.invoke(packet)
                     } catch (e: Exception) {
                         break
                     }

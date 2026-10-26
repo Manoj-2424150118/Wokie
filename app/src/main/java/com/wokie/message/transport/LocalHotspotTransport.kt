@@ -223,9 +223,9 @@ class LocalHotspotTransport(
     override fun send(packet: ByteArray) {
         thread {
             try {
-                outputStream?.write(packet.size)
-                outputStream?.write(packet)
-                outputStream?.flush()
+                // 4-byte length-prefixed framing (see PacketFraming). The old
+                // single-byte size corrupted every packet over 255 bytes.
+                outputStream?.let { PacketFraming.writePacket(it, packet) }
             } catch (e: Exception) {
                 logE("Hotspot", "Send failed", e)
             }
@@ -261,16 +261,10 @@ class LocalHotspotTransport(
         isRunning = true
         onConnectedCallback?.invoke()
 
-        val buffer = ByteArray(8192)
         while (isRunning) {
             try {
-                val size = inputStream?.read() ?: -1
-                if (size == -1) break
-                val bytesRead = inputStream?.read(buffer, 0, size) ?: -1
-                if (bytesRead > 0) {
-                    val packet = buffer.copyOfRange(0, bytesRead)
-                    onMessageReceived?.invoke(packet)
-                }
+                val packet = inputStream?.let { PacketFraming.readPacket(it) } ?: break
+                onMessageReceived?.invoke(packet)
             } catch (e: Exception) {
                 break
             }
