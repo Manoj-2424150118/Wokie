@@ -3,21 +3,25 @@ package com.wokie.message.ui
 import androidx.biometric.BiometricPrompt
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import com.wokie.message.security.AppLockManager
 import com.wokie.message.security.AuthMethod
+import com.wokie.message.ui.theme.WokieSpacing
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -66,6 +70,21 @@ fun AppLockScreen(
         biometricPrompt.authenticate(promptInfo)
     }
 
+    fun tryUnlockWithPin() {
+        // PBKDF2 at 210k iterations takes a few hundred ms —
+        // keep it off the UI thread
+        val pin = pinInput
+        scope.launch {
+            val ok = withContext(Dispatchers.Default) { appLockManager.verifyPin(pin) }
+            if (ok) {
+                onUnlockSuccess()
+            } else {
+                errorMessage = "Incorrect PIN"
+                pinInput = ""
+            }
+        }
+    }
+
     // Auto-launch once on entry, and again whenever the user taps AUTHENTICATE.
     // Previously this was LaunchedEffect(Unit) + a button that only reset a
     // state flag, so after one cancel/failure the Unit-keyed effect never
@@ -76,66 +95,95 @@ fun AppLockScreen(
         }
     }
 
+    val isPinMethod = appLockManager.authMethod == AuthMethod.WOKIE_PIN
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF050505)),
+            .background(MaterialTheme.colorScheme.background)
+            .safeDrawingPadding(),
         contentAlignment = Alignment.Center
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("WOKIE IS LOCKED", color = Color(0xFF00F3FF), fontSize = 24.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-            Spacer(modifier = Modifier.height(32.dp))
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = WokieSpacing.ExtraLarge),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.primaryContainer,
+                modifier = Modifier.size(72.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Filled.Lock,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(WokieSpacing.Medium))
+            Text(
+                "Wokie is locked",
+                style = MaterialTheme.typography.headlineSmall,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(WokieSpacing.Small))
+            Text(
+                text = if (isPinMethod) {
+                    "Enter your PIN to access your encrypted messages."
+                } else {
+                    "Use biometrics or your device credential to access your encrypted messages."
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(WokieSpacing.ExtraLarge))
 
-            if (appLockManager.authMethod == AuthMethod.WOKIE_PIN) {
+            if (isPinMethod) {
                 OutlinedTextField(
                     value = pinInput,
                     onValueChange = { pinInput = it },
-                    label = { Text("Enter Wokie PIN", color = Color.Gray) },
+                    label = { Text("PIN") },
                     visualTransformation = PasswordVisualTransformation(),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color(0xFF00F3FF),
-                        unfocusedBorderColor = Color.DarkGray,
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White
+                    singleLine = true,
+                    shape = MaterialTheme.shapes.medium,
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.NumberPassword,
+                        imeAction = ImeAction.Done
                     ),
-                    singleLine = true
+                    keyboardActions = KeyboardActions(onDone = { tryUnlockWithPin() }),
+                    modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(WokieSpacing.Medium))
                 Button(
-                    onClick = {
-                        // PBKDF2 at 210k iterations takes a few hundred ms —
-                        // keep it off the UI thread
-                        val pin = pinInput
-                        scope.launch {
-                            val ok = withContext(Dispatchers.Default) { appLockManager.verifyPin(pin) }
-                            if (ok) {
-                                onUnlockSuccess()
-                            } else {
-                                errorMessage = "Incorrect PIN"
-                                pinInput = ""
-                            }
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00F3FF).copy(alpha = 0.2f)),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF00F3FF)),
-                    shape = RoundedCornerShape(8.dp)
+                    onClick = { tryUnlockWithPin() },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                 ) {
-                    Text("UNLOCK", color = Color(0xFF00F3FF))
+                    Text("Unlock")
                 }
             } else {
                 Button(
                     onClick = { biometricAttempt++ }, // Re-triggers the biometric prompt
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00F3FF).copy(alpha = 0.2f)),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF00F3FF)),
-                    shape = RoundedCornerShape(8.dp)
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                 ) {
-                    Text("AUTHENTICATE", color = Color(0xFF00F3FF))
+                    Icon(Icons.Filled.Lock, contentDescription = null)
+                    Spacer(modifier = Modifier.width(WokieSpacing.Small))
+                    Text("Authenticate")
                 }
             }
 
             if (errorMessage.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(errorMessage, color = Color.Red, fontSize = 14.sp)
+                Spacer(modifier = Modifier.height(WokieSpacing.Medium))
+                Text(
+                    errorMessage,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    textAlign = TextAlign.Center
+                )
             }
         }
     }
