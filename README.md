@@ -1,5 +1,9 @@
 # Wokie — Offline Encrypted Mesh Messaging
 
+[![Latest version](https://img.shields.io/badge/latest-v1.1.0-brightgreen)](https://github.com/Manoj-2424150118/Wokie/releases/tag/v1.1.0) [![Download the APK](https://img.shields.io/badge/download-Wokie--v1.1.0.apk-blue)](https://github.com/Manoj-2424150118/Wokie/releases/download/v1.1.0/Wokie-v1.1.0.apk)
+
+**Latest version: v1.1.0** — see the [release page](https://github.com/Manoj-2424150118/Wokie/releases/tag/v1.1.0) for the APK and full notes.
+
 Chat directly between Android phones with **no internet, no server and no account**. Messages are end-to-end encrypted and travel device-to-device over nearby radios.
 
 ## 📲 Download & Install
