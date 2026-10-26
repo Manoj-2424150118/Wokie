@@ -36,6 +36,24 @@ class EncryptionManager {
         return hash.take(8).joinToString("") { "%02X".format(it) } // 16 hex chars
     }
 
+    /**
+     * Fingerprint of the PEER's public key, for out-of-band comparison.
+     *
+     * The verification UI previously displayed [getPublicKeyFingerprint]
+     * (this device's OWN key) labelled as the peer's fingerprint, so two
+     * honest devices always showed different strings and the MITM check
+     * could never actually pass.
+     *
+     * @return 16 hex chars of SHA-256(peer public key), or null if no peer
+     *         key has been received yet.
+     */
+    fun getPeerPublicKeyFingerprint(): String? {
+        val peerBytes = peerPublicKeyBytes ?: return null
+        val digest = MessageDigest.getInstance("SHA-256")
+        val hash = digest.digest(peerBytes)
+        return hash.take(8).joinToString("") { "%02X".format(it) }
+    }
+
     private var _sessionId: String = ""
     val sessionId: String get() = _sessionId
     
@@ -81,13 +99,6 @@ class EncryptionManager {
             destroyKeys()
             false
         }
-    }
-
-    fun ratchetSession() {
-        val kpg = KeyPairGenerator.getInstance("EC")
-        kpg.initialize(256)
-        keyPair = kpg.generateKeyPair()
-        peerPublicKeyBytes?.let { establishSession(it) }
     }
 
     fun encrypt(plaintext: ByteArray, associatedData: ByteArray): ByteArray? {
