@@ -267,11 +267,18 @@ class TransportCoordinator(
     }
 
     fun disconnect() {
-        activeTransport?.disconnect()
+        // Clear state and cancel the attempt BEFORE disconnecting the
+        // transport: transports fire their onDisconnected callback
+        // synchronously, and with the state already cleared the callback's
+        // bookkeeping is skipped — otherwise a MANUAL disconnect was recorded
+        // as a peer failure (backoff penalty) before the cancel could run.
+        val transport = activeTransport
+        val peerId = currentPeerId
         activeTransport = null
-        currentPeerId?.let { engine.cancelPeerAttempt(it) }
         currentPeerId = null
+        peerId?.let { engine.cancelPeerAttempt(it) }
         _activeRoute.value = "NONE"
+        transport?.disconnect()
     }
 
     fun send(packet: ByteArray) {

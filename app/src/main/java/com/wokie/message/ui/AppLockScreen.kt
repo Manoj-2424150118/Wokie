@@ -18,6 +18,9 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import com.wokie.message.security.AppLockManager
 import com.wokie.message.security.AuthMethod
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun AppLockScreen(
@@ -27,6 +30,7 @@ fun AppLockScreen(
 ) {
     var pinInput by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
     var showingBiometric by remember { mutableStateOf(false) }
     // Incrementing this re-runs the auto-launch effect below (retry support).
     var biometricAttempt by remember { mutableStateOf(0) }
@@ -99,11 +103,17 @@ fun AppLockScreen(
                 Spacer(modifier = Modifier.height(16.dp))
                 Button(
                     onClick = {
-                        if (appLockManager.verifyPin(pinInput)) {
-                            onUnlockSuccess()
-                        } else {
-                            errorMessage = "Incorrect PIN"
-                            pinInput = ""
+                        // PBKDF2 at 210k iterations takes a few hundred ms —
+                        // keep it off the UI thread
+                        val pin = pinInput
+                        scope.launch {
+                            val ok = withContext(Dispatchers.Default) { appLockManager.verifyPin(pin) }
+                            if (ok) {
+                                onUnlockSuccess()
+                            } else {
+                                errorMessage = "Incorrect PIN"
+                                pinInput = ""
+                            }
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00F3FF).copy(alpha = 0.2f)),
