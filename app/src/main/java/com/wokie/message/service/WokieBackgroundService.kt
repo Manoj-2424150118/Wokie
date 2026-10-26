@@ -37,10 +37,10 @@ class WokieBackgroundService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        
+
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Wokie::BackgroundRouter")
-        wakeLock?.acquire(10 * 60 * 1000L /*10 minutes*/)
+        wakeLock?.setReferenceCounted(false)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -49,13 +49,28 @@ class WokieBackgroundService : Service() {
             .setContentText("Maintaining peer-to-peer connection in background")
             .setSmallIcon(android.R.drawable.ic_secure)
             .build()
-            
+
         startForeground(1, notification)
 
-        // TODO: Initialize WokieTransport and MeshRouter here.
-        // activeTransport = RedundantTransport(NearbyTransport(this))
-        // meshRouter.setTransport(activeTransport)
-        
+        // Keep the CPU awake while the service runs. The previous code acquired
+        // the wake lock ONCE in onCreate with a 10-minute timeout, so a
+        // START_STICKY service stopped holding it after 10 minutes and the
+        // process could be frozen despite the foreground notification.
+        wakeLock?.takeIf { !it.isHeld }?.acquire(60 * 60 * 1000L /*60 minutes, re-acquired on each start*/)
+
+        // Role of this service today: background PERSISTENCE — the foreground
+        // notification + wake lock keep the process (and the mesh stack owned
+        // by MainActivity's composition) alive while backgrounded. The service
+        // is now actually started from MainActivity.onCreate; previously it
+        // was only declared in the manifest and never ran at all.
+        //
+        // Deliberately NOT done here: creating a second TransportCoordinator.
+        // Nearby Connections is a per-app singleton, and a duplicate transport
+        // stack would fight the activity's coordinator over advertising/
+        // discovery. Moving transport ownership into this service (the full
+        // Phase-24 plan in the class header) requires the activity to bind to
+        // the service instead of constructing its own coordinator.
+
         return START_STICKY
     }
 

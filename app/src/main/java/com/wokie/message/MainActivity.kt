@@ -71,20 +71,42 @@ class MainActivity : FragmentActivity() {
     private lateinit var privacyManager: PrivacyManager
     private var lastBackgroundTime: Long = 0
 
+    // Hoisted lock state: owned by the activity so onResume can re-lock by
+    // simply flipping this state. The previous implementation called
+    // setContent() again from onResume, which destroyed the entire
+    // composition — every remember{} in WokieApp (EncryptionManager,
+    // TransportCoordinator, chat history, session) was recreated and the
+    // old coordinator's transports/coroutines leaked.
+    private val lockState = mutableStateOf(LockState.UNLOCKED)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
-        
+
         appLockManager = AppLockManager(this)
         privacyManager = PrivacyManager(this)
+        lockState.value = if (appLockManager.isAppLockEnabled) LockState.LOCKED else LockState.UNLOCKED
 
         if (privacyManager.blockScreenshots) {
             window.setFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE, android.view.WindowManager.LayoutParams.FLAG_SECURE)
         }
 
+        // Start the background persistence service (foreground notification +
+        // wake lock) so the process — and with it the mesh stack owned by the
+        // composition — is not killed while the app is backgrounded. It was
+        // previously declared in the manifest but never started anywhere.
+        try {
+            androidx.core.content.ContextCompat.startForegroundService(
+                this,
+                android.content.Intent(this, com.wokie.message.service.WokieBackgroundService::class.java)
+            )
+        } catch (e: Exception) {
+            android.util.Log.e("WOKIE", "Could not start background service", e)
+        }
+
         setContent {
             WokieTheme {
-                WokieApp(this, appLockManager, privacyManager)
+                WokieApp(this, appLockManager, privacyManager, lockState)
             }
         }
     }
@@ -100,11 +122,10 @@ class MainActivity : FragmentActivity() {
             val elapsed = System.currentTimeMillis() - lastBackgroundTime
             val timeout = appLockManager.lockTimeout.delayMs
             if (timeout != -1L && elapsed >= timeout) {
-                setContent {
-                    WokieTheme {
-                        WokieApp(this, appLockManager, privacyManager, initialLockState = LockState.LOCKED)
-                    }
-                }
+                // Re-lock via state only — the composition (and session) survives;
+                // WokieApp's lock effect destroys the session only when the
+                // user's destroySessionOnLock setting says so.
+                lockState.value = LockState.LOCKED
                 return
             }
         }
@@ -129,7 +150,7 @@ fun WokieApp(
     activity: FragmentActivity,
     appLockManager: AppLockManager,
     privacyManager: PrivacyManager,
-    initialLockState: LockState = if (appLockManager.isAppLockEnabled) LockState.LOCKED else LockState.UNLOCKED
+    lockStateState: MutableState<LockState>
 ) {
     val context = LocalContext.current
     val encryptionManager = remember { EncryptionManager() }
@@ -150,7 +171,7 @@ fun WokieApp(
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     var showSettings by remember { mutableStateOf(false) }
-    var lockState by remember { mutableStateOf(initialLockState) }
+    var lockState by lockStateState
     
     var isRecordingVoice by remember { mutableStateOf(false) }
     var isReceivingVoice by remember { mutableStateOf(false) }
@@ -208,7 +229,9 @@ fun WokieApp(
                     WokiePacketType.KEY_EXCHANGE -> {
                         val success = encryptionManager.establishSession(packet.payload)
                         if (success) {
-                            peerFingerprint = encryptionManager.getPublicKeyFingerprint()
+                            // Must be the PEER's fingerprint: the old code displayed this
+                            // device's OWN key fingerprint, so verification could never match
+                            peerFingerprint = encryptionManager.getPeerPublicKeyFingerprint() ?: ""
                             connectionState = "FINGERPRINT_VERIFICATION"
                         } else {
                             // KEY EXCHANGE FAILED: safe error recovery without crashing
@@ -276,7 +299,9 @@ fun WokieApp(
                     if (WokiePacketParser.validateX509EcPublicKey(data)) {
                         val success = encryptionManager.establishSession(data)
                         if (success) {
-                            peerFingerprint = encryptionManager.getPublicKeyFingerprint()
+                            // Must be the PEER's fingerprint: the old code displayed this
+                            // device's OWN key fingerprint, so verification could never match
+                            peerFingerprint = encryptionManager.getPeerPublicKeyFingerprint() ?: ""
                             connectionState = "FINGERPRINT_VERIFICATION"
                         } else {
                             encryptionManager.resetEphemeralKeys()

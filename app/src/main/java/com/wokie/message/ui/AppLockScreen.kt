@@ -28,36 +28,47 @@ fun AppLockScreen(
     var pinInput by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf("") }
     var showingBiometric by remember { mutableStateOf(false) }
+    // Incrementing this re-runs the auto-launch effect below (retry support).
+    var biometricAttempt by remember { mutableStateOf(0) }
 
-    LaunchedEffect(Unit) {
-        if (appLockManager.authMethod == AuthMethod.DEVICE_CREDENTIAL_OR_BIOMETRIC && appLockManager.canUseBiometricsOrDeviceCredential() && !showingBiometric) {
-            showingBiometric = true
-            val executor = ContextCompat.getMainExecutor(activity)
-            val biometricPrompt = BiometricPrompt(activity, executor,
-                object : BiometricPrompt.AuthenticationCallback() {
-                    override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
-                        super.onAuthenticationError(errorCode, errString)
-                        errorMessage = "Authentication error: $errString"
-                        showingBiometric = false
-                    }
-                    override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
-                        super.onAuthenticationSucceeded(result)
-                        onUnlockSuccess()
-                    }
-                    override fun onAuthenticationFailed() {
-                        super.onAuthenticationFailed()
-                        errorMessage = "Authentication failed"
-                        showingBiometric = false
-                    }
-                })
+    fun launchBiometric() {
+        if (showingBiometric) return
+        showingBiometric = true
+        val executor = ContextCompat.getMainExecutor(activity)
+        val biometricPrompt = BiometricPrompt(activity, executor,
+            object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    super.onAuthenticationError(errorCode, errString)
+                    errorMessage = "Authentication error: $errString"
+                    showingBiometric = false
+                }
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    super.onAuthenticationSucceeded(result)
+                    onUnlockSuccess()
+                }
+                override fun onAuthenticationFailed() {
+                    super.onAuthenticationFailed()
+                    errorMessage = "Authentication failed"
+                    showingBiometric = false
+                }
+            })
 
-            val promptInfo = BiometricPrompt.PromptInfo.Builder()
-                .setTitle("Unlock Wokie")
-                .setSubtitle("Authenticate to access your encrypted messages")
-                .setAllowedAuthenticators(androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG or androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL)
-                .build()
+        val promptInfo = BiometricPrompt.PromptInfo.Builder()
+            .setTitle("Unlock Wokie")
+            .setSubtitle("Authenticate to access your encrypted messages")
+            .setAllowedAuthenticators(androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG or androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL)
+            .build()
 
-            biometricPrompt.authenticate(promptInfo)
+        biometricPrompt.authenticate(promptInfo)
+    }
+
+    // Auto-launch once on entry, and again whenever the user taps AUTHENTICATE.
+    // Previously this was LaunchedEffect(Unit) + a button that only reset a
+    // state flag, so after one cancel/failure the Unit-keyed effect never
+    // re-ran and the user was locked out until the process restarted.
+    LaunchedEffect(biometricAttempt) {
+        if (appLockManager.authMethod == AuthMethod.DEVICE_CREDENTIAL_OR_BIOMETRIC && appLockManager.canUseBiometricsOrDeviceCredential()) {
+            launchBiometric()
         }
     }
 
@@ -103,7 +114,7 @@ fun AppLockScreen(
                 }
             } else {
                 Button(
-                    onClick = { showingBiometric = false }, // Reset to trigger LaunchedEffect
+                    onClick = { biometricAttempt++ }, // Re-triggers the biometric prompt
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00F3FF).copy(alpha = 0.2f)),
                     border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF00F3FF)),
                     shape = RoundedCornerShape(8.dp)
