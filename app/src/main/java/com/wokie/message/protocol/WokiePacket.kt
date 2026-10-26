@@ -26,6 +26,24 @@ data class WokiePacket(
     val payload: ByteArray = ByteArray(0)
 ) {
     fun toByteArray(): ByteArray {
+        // Validate against the same rules WokiePacketParser enforces on
+        // receive. Previously these were unchecked and the length fields were
+        // truncated via toByte()/toShort(), producing packets the parser on
+        // the other side then rejected — silent round-trip failures.
+        require(senderNodeId.matches(NODE_ID_REGEX)) {
+            "senderNodeId must match ${NODE_ID_REGEX.pattern}: '$senderNodeId'"
+        }
+        require(packetId.toByteArray(Charsets.UTF_8).size <= MAX_PACKET_ID_LENGTH) {
+            "packetId exceeds $MAX_PACKET_ID_LENGTH bytes"
+        }
+        // The parser rejects any packet whose TOTAL size exceeds MAX_PACKET_SIZE.
+        val totalSizeEstimate = 15 + senderNodeId.toByteArray(Charsets.UTF_8).size +
+            packetId.toByteArray(Charsets.UTF_8).size + payload.size
+        require(totalSizeEstimate <= MAX_PACKET_SIZE) {
+            "packet exceeds $MAX_PACKET_SIZE bytes: $totalSizeEstimate"
+        }
+        require(hopLimit >= 0 && hopLimit <= MAX_HOP_LIMIT) { "hopLimit out of range: $hopLimit" }
+
         val nodeBytes = senderNodeId.toByteArray(Charsets.UTF_8)
         val packetIdBytes = packetId.toByteArray(Charsets.UTF_8)
         // 4 (magic) + 1 (version) + 1 (type) + 1 (hopLimit) + 4 (expiration timestamp seconds) + 1 (nodeIdLen) + N + 1 (packetIdLen) + M + 2 (payloadLen) + L
