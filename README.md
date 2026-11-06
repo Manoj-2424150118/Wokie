@@ -16,7 +16,7 @@ Wokie is an offline-first Android messenger built for the situations where infra
 
 ## Download
 
-Signed release APKs are published on the [Releases](https://github.com/Manoj-2424150118/Wokie/releases) page — latest: **[v1.2.0](https://github.com/Manoj-2424150118/Wokie/releases/tag/v1.2.0)**. Releases from v1.1.0 onward are signed with a permanent release key, so updates install in place. Requires Android 8.1 (API 27) or newer — and a second phone with Wokie installed to chat with.
+Signed release APKs are published on the [Releases](https://github.com/Manoj-2424150118/Wokie/releases) page — latest: **[v1.2.1](https://github.com/Manoj-2424150118/Wokie/releases/tag/v1.2.1)**. Releases from v1.1.0 onward are signed with a permanent release key, so updates install in place. Requires Android 8.1 (API 27) or newer — and a second phone with Wokie installed to chat with.
 
 > **Upgrading from v1.0 / v1.0.1:** those builds used throwaway debug keys — uninstall the old app first, then install the current release.
 
