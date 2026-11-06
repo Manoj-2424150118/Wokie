@@ -1,120 +1,104 @@
-# Wokie — Offline Encrypted Mesh Messaging
+# 📡 Wokie — Offline Encrypted Mesh Messaging
 
-[![Latest version](https://img.shields.io/badge/latest-v1.1.0-brightgreen)](https://github.com/Manoj-2424150118/Wokie/releases/tag/v1.1.0) [![Download the APK](https://img.shields.io/badge/download-Wokie--v1.1.0.apk-blue)](https://github.com/Manoj-2424150118/Wokie/releases/download/v1.1.0/Wokie-v1.1.0.apk)
+**Chat directly between Android phones with no internet, no server and no account. Messages are end-to-end encrypted and relayed device-to-device over nearby radios — with delivery receipts that prove a message actually arrived.**
 
-**Latest version: v1.1.0** — see the [release page](https://github.com/Manoj-2424150118/Wokie/releases/tag/v1.1.0) for the APK and full notes.
+![Kotlin](https://img.shields.io/badge/Kotlin-Android-0d1117?style=flat-square&logo=kotlin&logoColor=7dd3fc&labelColor=0d1117) ![Android](https://img.shields.io/badge/Android-API_27+-0d1117?style=flat-square&logo=android&logoColor=7dd3fc&labelColor=0d1117) ![Version](https://img.shields.io/badge/version-1.2.0-0d1117?style=flat-square&logoColor=7dd3fc&labelColor=0d1117) ![CI](https://img.shields.io/github/actions/workflow/status/Manoj-2424150118/Wokie/android-ci.yml?branch=main&style=flat-square&label=CI&labelColor=0d1117&color=7dd3fc)
 
-Chat directly between Android phones with **no internet, no server and no account**. Messages are end-to-end encrypted and travel device-to-device over nearby radios.
+## Overview
 
-## 📲 Download & Install
+Wokie is an offline-first Android messenger built for the situations where infrastructure is down, absent or untrusted. Two or more phones running Wokie discover each other over nearby radios and exchange messages directly — and can **relay** them across intermediate devices toward a peer that is out of direct range.
 
-1. Go to the [**Releases**](https://github.com/Manoj-2424150118/Wokie/releases) page.
-2. Download `Wokie-v1.1.0.apk` from the v1.1.0 release.
-3. Open the APK on your Android phone and allow "Install from this source" when prompted.
-4. Requires Android 8.1 (API 27) or newer — and a second phone with Wokie installed to chat with.
+- **End-to-end encryption** — every session runs an **ephemeral ECDH key agreement**, derives a 256-bit session key with **HKDF-SHA256**, and encrypts payloads with **AES-256-GCM** (Google Tink's JCE provider). Intermediate relay nodes forward ciphertext they cannot read.
+- **Multiple transports, one mesh** — a transport coordinator works across **Bluetooth LE (GATT)**, **Wi-Fi Direct** and a **local hotspot**, so the mesh uses whatever radio path is available.
+- **Delivery receipts (v1.2.0)** — in a mesh, "sent" only means a message left your phone. A dedicated `DELIVERY_ACK` protocol packet flips the sender's bubble from **Sent → Delivered** once the peer's device has received and decrypted the message.
+- **Replay protection & peer verification** — a replay protector rejects re-sent ciphertext, and peers expose a **verifiable fingerprint** so you can confirm you are talking to the right device.
+- **No account, no server** — there is no sign-up and no cloud relay. An app lock (PIN) gates access on the device itself.
 
-### Upgrading from v1.0 / v1.0.1
+## Download
 
-The v1.0 and v1.0.1 builds were signed with throwaway debug keys, so Android will **refuse to install v1.1.0 over them** ("App not installed"). **Uninstall the old Wokie app first**, then install v1.1.0. From v1.1.0 onward, releases are signed with a permanent release key, so future updates install in place — no uninstall needed.
+Signed release APKs are published on the [Releases](https://github.com/Manoj-2424150118/Wokie/releases) page — latest: **[v1.2.0](https://github.com/Manoj-2424150118/Wokie/releases/tag/v1.2.0)**. Releases from v1.1.0 onward are signed with a permanent release key, so updates install in place. Requires Android 8.1 (API 27) or newer — and a second phone with Wokie installed to chat with.
 
-## ✨ What's new in v1.2.0
+> **Upgrading from v1.0 / v1.0.1:** those builds used throwaway debug keys — uninstall the old app first, then install the current release.
 
-- **Delivery receipts** — in an offline mesh, "sent" only means a message left your phone. Now every message bubble shows **Sent** until the peer's device confirms receipt with a new `DELIVERY_ACK` protocol packet, then flips to **Delivered**. No more guessing whether a message actually arrived across the radios.
+## Architecture
 
-## ✨ What's new in v1.1.0
-
-- **Full Material 3 redesign** — a branded design system with light and dark themes that follow your phone's system setting, applied consistently across the peer hub, chat, app lock and settings screens.
-- **Messenger-grade chat UI** — a live connection status banner, a peer list with per-peer status, chat bubbles with timestamps, and a rounded message input bar with a round send button.
-- **Permanent release signing** — releases now use a dedicated signing key (see the upgrade note above), so updates install in place from this version on.
-- **Includes the v1.0.1 fixes** — disconnecting on purpose no longer counts as a failed connection attempt (no reconnect backoff penalty for a manual disconnect), and PIN verification runs off the UI thread so unlocking no longer stutters.
-
-## 🚀 How to Use
-
-### 1. Get set up
-
-Open Wokie on **both** phones and grant the Bluetooth / Nearby / Location permissions when asked (Android requires them for device discovery). Both phones must use the **same transport** — Nearby is the default, and Nearby/Wi-Fi Direct chat is the working path. You can change the transport any time via the gear icon (top right) → **Settings → Preferred Transport**, where every transport shows an honest status label (READY, EXPERIMENTAL, NOT CONFIGURED, or UNAVAILABLE on this device). BLE Mesh, Internet relay and Voice PTT remain **experimental**.
-
-### 2. Watch the status banner
-
-The banner at the top of the main screen always shows what Wokie is actually doing:
-
-| Banner | Meaning |
-|---|---|
-| **Searching for peers** | Scanning for other Wokie phones; it also shows how many peers are currently available. |
-| **Connecting…** | A connection attempt / key exchange is in progress ("Finding the best route and securing the session…"). You can tap **Cancel** to stop it. |
-| **Network ready** | A route to the peer network is up (the banner names the transport in use), but no encrypted session has started yet. |
-| **Secure session** | You're connected and chatting end-to-end encrypted. The banner shows the peer's name, the transport in use, a countdown of the time left in the session, and a **Disconnect** button. |
-
-Snackbars also confirm the big transitions — e.g. "Secure session established", "Connection to the peer was lost", or "Session expired — reconnect to keep chatting".
-
-### 3. Connect to a peer
-
-Discovered phones appear under **Nearby peers** (with a "N found" count). Each peer row shows an avatar with the peer's initials, the transport it was found via, and its status — for example **Session expired** or **Connection lost**. Tap **Connect** to start a secure session, or **Reconnect** if that peer's previous session expired.
-
-If nobody appears yet, Wokie keeps scanning — open Wokie on the other phone, keep both phones close, and make sure both use the same transport. The empty screen has a **Transport settings** shortcut if you need to change it.
-
-### 4. Verify the fingerprint
-
-Before any chat opens, a **Verify your peer** screen shows the peer's fingerprint — a code displayed in groups of four characters. **Read it out and compare it with the code on the other person's phone.** Only if the two codes are identical should you tap **They match**. If they differ, tap **Don't match** — the session is dropped. This comparison is what stops a man-in-the-middle from silently sitting between the two phones.
-
-### 5. Chat
-
-Once verified, the chat screen opens. Your messages appear as bubbles on the right, the peer's on the left, each with the time it was sent or received underneath. Type in the rounded **Message** field at the bottom and tap the round send button (or the keyboard's Send key). The list automatically scrolls to the newest message.
-
-Sessions are time-boxed: the countdown chip in the banner shows the time remaining, and when a session expires Wokie resets the encryption keys and returns you to the peer list, where you can **Reconnect** (and verify the fingerprint again).
-
-### 6. Disconnect
-
-During a session, tap **Disconnect** in the status banner. Wokie asks first — **"End secure session?"** — and reminds you that chatting again means reconnecting and re-verifying the fingerprint. Tap **Disconnect** to confirm, or **Cancel** to keep chatting.
-
-### 7. Lock the app (optional)
-
-In **Settings → Security**, turn on **Protect Wokie when opening** (app lock). You can then choose:
-
-- **Biometric / Device** — unlock with biometrics or your device credential. The prompt appears automatically on the lock screen; if you cancel or it fails, tap **Authenticate** to try again.
-- **Wokie PIN** — set a PIN (at least 4 characters) and enter it on the lock screen's PIN field, then tap **Unlock**. After 5 wrong attempts the app locks for 60 seconds.
-
-You can also pick **when** Wokie re-locks after you leave it, and turn on **Destroy active E2EE session** so encryption keys are purged whenever the app locks.
-
-### 8. Settings worth knowing
-
-- **Network** — Preferred Transport (with per-transport status labels), **Smart Fallback** (fall back to the best available transport if your preferred one fails), **Auto Connect**, and Nearby discovery options (visibility to others, auto-accept — off by default — and discovery duration).
-- **Connection Diagnostics** — a collapsible card showing the preferred transport, active route, target peer, session state, fallback policy and crypto in use.
-- **Privacy** — hide notification content, block screenshots, and clipboard protection.
-- **Emergency** — export keys & logs to Logcat, and **Self-destruct** (wipes the current session and closes Wokie immediately, after a confirmation).
-
-A foreground service keeps the connection alive while the app is in the background (you'll see a persistent "Wokie Secure Mesh" notification).
-
-## 📡 Transports
-
-| Transport | Status |
-|---|---|
-| Nearby Connections | ✅ Primary path |
-| Wi-Fi Direct | ✅ Socket transport (4-byte framed) |
-| Local Hotspot | ⚠️ Experimental — socket transport implemented; shown as experimental in Settings |
-| Internet relay | ⚠️ Experimental — not configured; no public relay service |
-| BLE Mesh | ⚠️ Experimental — advertising/discovery only; no GATT data path yet |
-| Voice / PTT | ⚠️ Experimental |
-
-## 🔒 Security notes
-
-- Fingerprint verification compares the **peer's** public key hash — check it out-of-band before trusting a session.
-- PIN hashing: PBKDF2-HMAC-SHA256, 210,000 iterations, with the iteration count stored per hash (older PINs upgrade automatically on unlock).
-- Session keys are ephemeral per pairing and are reset when a session expires or becomes invalid; a background service holds a wake lock so the mesh stack isn't frozen by the OS.
-
-## 🛠️ Build from source
-
-```bash
-./gradlew :app:assembleDebug        # debug APK
-./gradlew :app:testDebugUnitTest    # JVM unit tests (framing, crypto, mesh engine)
+```mermaid
+flowchart TB
+    subgraph UI["UI — Jetpack Compose / Material 3 (ui/)"]
+        Peers["Peer hub — discovery, per-peer status"]
+        Chat["Chat — bubbles, timestamps,<br/>Sent → Delivered receipts"]
+        Lock["App lock (PIN) · Settings"]
+    end
+    subgraph Core["Mesh core (mesh/ · protocol/ · service/)"]
+        Router["MeshRouter<br/>routes, multi-hop relay, hop limit"]
+        Env["MessageEnvelope & packet types<br/>incl. DELIVERY_ACK (0x06)"]
+        Coord["TransportCoordinator"]
+    end
+    subgraph Crypto["Crypto (crypto/ · security/)"]
+        EM["EncryptionManager<br/>ephemeral ECDH → HKDF-SHA256 → AES-256-GCM"]
+        RP["ReplayProtector"]
+        FP["Peer fingerprint verification"]
+    end
+    subgraph Radios["Transports (transport/)"]
+        BLE["BleMeshTransport — Bluetooth LE GATT"]
+        WFD["WifiDirectTransport — Wi-Fi Direct"]
+        HS["LocalHotspotTransport — local hotspot"]
+    end
+    UI --> Router --> Env --> EM
+    EM --> RP
+    Router --> Coord --> BLE & WFD & HS
 ```
 
-Requires JDK 17 and Android SDK platform 34. CI (GitHub Actions) runs the unit tests and builds the APK on every push; release APKs are signed with Wokie's permanent release key.
+A raw-socket transport also exists in the codebase; it points at an emulator host address and exists for two-device automated testing, not as a user-facing path.
 
-## 📦 Tech
+## Threat model
 
-Kotlin • Jetpack Compose (Material 3) • Google Play Services Nearby • Tink (AES-GCM) • CameraX-free, server-free design
+| Asset | Adversary | Mitigation |
+|---|---|---|
+| Message contents on the radio link | Passive eavesdropper within radio range | End-to-end encryption: ephemeral ECDH + HKDF-SHA256 session keys, AES-256-GCM payloads — captured traffic is ciphertext |
+| Message contents at a relay | Malicious or curious intermediate node | Relays forward encrypted envelopes and hold no session keys; the router only decrements the hop limit and passes ciphertext on |
+| Session integrity | Active attacker replaying old traffic | Replay protection rejects previously seen ciphertext; packet types and hop limits are enforced by the router |
+| Peer identity | Impostor device joining the mesh | Peer fingerprints can be compared out-of-band to verify you are connected to the intended device |
+| The app on a lost phone | Finder / thief | App lock (PIN) gates the UI; there is no account or server copy of conversations to attack |
+| Availability | No infrastructure at all | By design: no server, account or internet is required — discovery and relay run entirely on local radios |
 
----
+**Honest limits:** nearby radios inherently expose that devices are present and talking; Wokie protects message *content*, not the fact of communication. Real-device BLE behaviour is verified on physical hardware — the JVM suite covers protocol and crypto logic, not radio firmware quirks.
 
-Built by [Manoj Kumar Sharma](https://github.com/Manoj-2424150118) — cybersecurity & software developer, Jaipur, India.
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| Language | Kotlin |
+| UI | Jetpack Compose · Material 3 |
+| Encryption | Ephemeral ECDH · HKDF-SHA256 · AES-256-GCM (Google Tink JCE) |
+| Networking | Bluetooth LE (GATT) · Wi-Fi Direct · Local hotspot — behind a `WokieTransport` abstraction with a coordinating router |
+| Protocol | Custom packet envelope with typed packets (incl. `DELIVERY_ACK`), multi-hop relay with hop limit |
+| Platform | Android — minSdk 27 (Android 8.1), target/compileSdk 34 · AGP 8.2 · Gradle 8.2 |
+| Current release | v1.2.0 (versionCode 4) — delivery receipts |
+
+## Setup & build
+
+1. Install **Android Studio** (JDK 17 toolchain) and clone the repository.
+2. Open the project and let Gradle sync.
+3. Build and test:
+
+```bash
+./gradlew assembleDebug        # debug APK
+./gradlew testDebugUnitTest    # JVM unit tests (96 tests)
+./gradlew assembleRelease      # release APK (requires the release keystore — maintainer builds)
+```
+
+Mesh features need **two physical Android devices** to exercise peer discovery and relay; see `TWO_DEVICE_TEST.md` in this repository for the manual two-device test plan. End users should simply install the signed APK from [Releases](https://github.com/Manoj-2424150118/Wokie/releases).
+
+## Testing
+
+- **96 JVM unit tests** (`app/src/test/…`) covering the crypto layer (key agreement, encryption, replay protection, peer fingerprints), the protocol (message envelopes, physical packet framing), the mesh discovery state machine, session recovery and a two-peer integration test.
+- **CI:** the Android CI workflow builds the app and runs the unit tests on every push to `main`.
+
+## Security
+
+Report vulnerabilities privately, per **[SECURITY.md](SECURITY.md)** — please do not open public issues for security reports.
+
+## License
+
+No open-source licence has been applied to this repository yet; all rights are reserved by the author until one is added.
