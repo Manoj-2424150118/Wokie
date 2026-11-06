@@ -51,7 +51,10 @@ class MeshRouter(
                     activeTransport?.send(forwarded.toByteArray())
                 }
                 WokiePacketType.VOICE_FRAME,
-                WokiePacketType.DISCOVERY_BEACON -> {
+                WokiePacketType.DISCOVERY_BEACON,
+                WokiePacketType.DELIVERY_ACK -> {
+                    // ACKs are local-node control packets, not envelopes:
+                    // the app layer matches them to the sent message.
                     onMessageForLocalNode(payload)
                 }
             }

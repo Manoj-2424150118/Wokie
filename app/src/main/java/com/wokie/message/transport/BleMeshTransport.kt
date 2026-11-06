@@ -208,7 +208,8 @@ class BleMeshTransport(
             }
             WokiePacketType.KEY_EXCHANGE,
             WokiePacketType.ENCRYPTED_MESSAGE,
-            WokiePacketType.VOICE_FRAME -> {
+            WokiePacketType.VOICE_FRAME,
+            WokiePacketType.DELIVERY_ACK -> {
                 // Verified Wokie application packet: deliver to application receiver
                 onMessageReceived?.invoke(data)
             }
