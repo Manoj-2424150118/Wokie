@@ -101,4 +101,4 @@ Report vulnerabilities privately, per **[SECURITY.md](SECURITY.md)** — please 
 
 ## License
 
-No open-source licence has been applied to this repository yet; all rights are reserved by the author until one is added.
+MIT — see [LICENSE](LICENSE) for the full text.
