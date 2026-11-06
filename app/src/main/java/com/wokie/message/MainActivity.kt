@@ -86,11 +86,20 @@ enum class SessionState {
     SESSION_RECONNECTING
 }
 
+/** Delivery state of an outgoing message: SENT when it leaves this
+ * device, DELIVERED once the peer's DELIVERY_ACK for it lands. In an
+ * offline mesh, "sent" alone proves nothing — the receipt is the
+ * difference between hoping and knowing. */
+enum class DeliveryStatus { SENT, DELIVERED }
+
 data class Message(
     val text: String,
     val isSent: Boolean,
     /** Wall-clock time the message was sent/received; shown in the bubble. */
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    /** Envelope id of an outgoing message; the peer's ACK quotes it. */
+    val id: String? = null,
+    val status: DeliveryStatus = DeliveryStatus.SENT
 )
 
 class MainActivity : FragmentActivity() {
@@ -265,6 +274,15 @@ fun WokieApp(
                                     if (decrypted != null) {
                                         messages.add(Message(String(decrypted, Charsets.UTF_8), isSent = false))
                                         scope.launch { listState.animateScrollToItem(messages.size - 1) }
+                                        // Delivery receipt: tell the sender this
+                                        // message actually landed on this device.
+                                        val ackPacket = WokiePacket(
+                                            packetType = WokiePacketType.DELIVERY_ACK,
+                                            senderNodeId = localNodeId,
+                                            packetId = UUID.randomUUID().toString(),
+                                            payload = envelope.messageId.toByteArray(Charsets.UTF_8)
+                                        )
+                                        coordinatorInstance?.send(ackPacket.toByteArray())
                                     } else {
                                         connectionState = "INVALID_SESSION"
                                         sessionState = SessionState.SESSION_INVALID
@@ -280,6 +298,15 @@ fun WokieApp(
                             }
                         } catch (e: Exception) {
                             android.util.Log.d("WOKIE_E2EE", "ENVELOPE_PARSE_FAILED error=${e.message}")
+                        }
+                    }
+                    WokiePacketType.DELIVERY_ACK -> {
+                        // The peer confirms one of our messages landed:
+                        // flip its bubble from Sent to Delivered.
+                        val ackedId = String(packet.payload, Charsets.UTF_8)
+                        val idx = messages.indexOfFirst { it.isSent && it.id == ackedId }
+                        if (idx >= 0 && messages[idx].status != DeliveryStatus.DELIVERED) {
+                            messages[idx] = messages[idx].copy(status = DeliveryStatus.DELIVERED)
                         }
                     }
                     WokiePacketType.VOICE_FRAME -> {
@@ -615,7 +642,7 @@ fun WokieApp(
                 payload = serialized
             )
             coordinator.send(wokiePacket.toByteArray())
-            messages.add(Message(text, isSent = true))
+            messages.add(Message(text, isSent = true, id = envId))
             scope.launch { listState.animateScrollToItem(messages.size) }
         }
     }
@@ -1319,7 +1346,11 @@ fun MessageBubble(message: Message) {
                 fontFamily = if (isDecrypting) FontFamily.Monospace else FontFamily.Default
             )
             Text(
-                text = formatMessageTime(message.timestamp),
+                text = if (isSent) {
+                    "${formatMessageTime(message.timestamp)} · ${if (message.status == DeliveryStatus.DELIVERED) "Delivered" else "Sent"}"
+                } else {
+                    formatMessageTime(message.timestamp)
+                },
                 style = MaterialTheme.typography.labelSmall,
                 color = contentColor.copy(alpha = 0.7f),
                 modifier = Modifier.padding(top = 2.dp)

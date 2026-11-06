@@ -8,7 +8,9 @@ enum class WokiePacketType(val code: Byte) {
     KEY_EXCHANGE(0x02.toByte()),
     ENCRYPTED_MESSAGE(0x03.toByte()),
     MESH_RELAY(0x04.toByte()),
-    VOICE_FRAME(0x05.toByte());
+    VOICE_FRAME(0x05.toByte()),
+    /** Delivery receipt: payload is the messageId being acknowledged. */
+    DELIVERY_ACK(0x06.toByte());
 
     companion object {
         fun fromCode(code: Byte): WokiePacketType? = values().firstOrNull { it.code == code }

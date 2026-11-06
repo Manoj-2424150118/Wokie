@@ -17,6 +17,10 @@ Chat directly between Android phones with **no internet, no server and no accoun
 
 The v1.0 and v1.0.1 builds were signed with throwaway debug keys, so Android will **refuse to install v1.1.0 over them** ("App not installed"). **Uninstall the old Wokie app first**, then install v1.1.0. From v1.1.0 onward, releases are signed with a permanent release key, so future updates install in place — no uninstall needed.
 
+## ✨ What's new in v1.2.0
+
+- **Delivery receipts** — in an offline mesh, "sent" only means a message left your phone. Now every message bubble shows **Sent** until the peer's device confirms receipt with a new `DELIVERY_ACK` protocol packet, then flips to **Delivered**. No more guessing whether a message actually arrived across the radios.
+
 ## ✨ What's new in v1.1.0
 
 - **Full Material 3 redesign** — a branded design system with light and dark themes that follow your phone's system setting, applied consistently across the peer hub, chat, app lock and settings screens.
