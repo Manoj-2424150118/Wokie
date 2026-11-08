@@ -74,7 +74,7 @@ A raw-socket transport also exists in the codebase; it points at an emulator hos
 | Networking | Bluetooth LE (GATT) · Wi-Fi Direct · Local hotspot — behind a `WokieTransport` abstraction with a coordinating router |
 | Protocol | Custom packet envelope with typed packets (incl. `DELIVERY_ACK`), multi-hop relay with hop limit |
 | Platform | Android — minSdk 27 (Android 8.1), target/compileSdk 34 · AGP 8.2 · Gradle 8.2 |
-| Current release | v1.2.0 (versionCode 4) — delivery receipts |
+| Current release | v1.2.1 tag (app build 1.2.0, versionCode 4) — delivery receipts |
 
 ## Setup & build
 
